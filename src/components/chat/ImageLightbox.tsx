@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Download } from "lucide-react";
+import { X, ZoomIn, ZoomOut, RotateCcw, ExternalLink, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useImageViewerStore } from "../../stores/imageViewerStore";
@@ -11,7 +11,12 @@ const WHEEL_STEP = 0.1;
 const BTN_STEP = 0.25;
 
 export default function ImageLightbox() {
-  const { open, src, name, path, closeImage } = useImageViewerStore();
+  const { open, images, index, closeImage, next, prev } = useImageViewerStore();
+  const current = images[index];
+  const src = current?.src;
+  const name = current?.name;
+  const path = current?.path;
+  const total = images.length;
 
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -23,12 +28,12 @@ export default function ImageLightbox() {
     setTranslate({ x: 0, y: 0 });
   }, []);
 
-  // Reset on each open
+  // Reset on each open AND on image switch
   useEffect(() => {
     if (open) reset();
   }, [open, src, reset]);
 
-  // Keyboard: Esc / + / - / 0
+  // Keyboard: Esc / + / - / 0 / ←→
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
@@ -44,20 +49,30 @@ export default function ImageLightbox() {
       } else if (e.key === "0") {
         e.preventDefault();
         reset();
+      } else if (e.key === "ArrowLeft" && total > 1) {
+        e.preventDefault();
+        prev();
+      } else if (e.key === "ArrowRight" && total > 1) {
+        e.preventDefault();
+        next();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [open, closeImage, reset]);
+  }, [open, closeImage, reset, prev, next, total]);
 
-  // Wheel zoom
+  // Wheel zoom — only when Ctrl/Cmd is held (also matches macOS pinch gesture,
+  // which the system reports as a wheel event with ctrlKey=true). Without the
+  // modifier, let the browser scroll the lightbox container so tall images can
+  // be browsed by scrolling without zooming.
   const onWheel = (e: React.WheelEvent<HTMLDivElement>) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault();
     const delta = e.deltaY > 0 ? -WHEEL_STEP : WHEEL_STEP;
     setScale((s) => {
-      const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, +(s + delta).toFixed(2)));
-      if (next <= 1) setTranslate({ x: 0, y: 0 });
-      return next;
+      const nextScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, +(s + delta).toFixed(2)));
+      if (nextScale <= 1) setTranslate({ x: 0, y: 0 });
+      return nextScale;
     });
   };
 
@@ -131,13 +146,44 @@ export default function ImageLightbox() {
   const pct = Math.round(scale * 100);
 
   return (
-    <div
-      className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm flex items-center justify-center select-none"
-      onClick={onBackgroundClick}
-      onWheel={onWheel}
-    >
-      {/* Top-right toolbar */}
-      <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
+    <>
+      {/* Layer 1 — backdrop. Sits underneath everything; non-interactive so the
+          scroll container above receives wheel/click events. Kept as its own
+          element because `backdrop-filter` creates a containing block for any
+          `fixed` descendants, which would re-anchor the toolbars to this layer
+          and make them scroll along with tall images. */}
+      <div className="fixed inset-0 z-[200] bg-black/85 backdrop-blur-sm pointer-events-none" />
+
+      {/* Layer 2 — scroll container holding the image */}
+      <div
+        className="fixed inset-0 z-[201] overflow-y-auto overflow-x-hidden select-none"
+        onClick={onBackgroundClick}
+        onWheel={onWheel}
+      >
+        <div
+          className="min-h-full flex items-center justify-center px-4 py-16"
+          onClick={onBackgroundClick}
+        >
+          <img
+            src={src}
+            alt={name || "preview"}
+            draggable={false}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={onImageDoubleClick}
+            onMouseDown={onMouseDown}
+            className="max-w-[min(90vw,1200px)] h-auto shadow-2xl"
+            style={{
+              transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+              transformOrigin: "center top",
+              transition: dragging ? "none" : "transform 150ms ease-out",
+              cursor: scale > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Layer 3 — toolbars. Siblings of the scroll container so `fixed` stays viewport-relative. */}
+      <div className="fixed top-4 right-4 flex items-center gap-2 z-[202]">
         {path && (
           <button
             onClick={(e) => {
@@ -178,34 +224,49 @@ export default function ImageLightbox() {
         </button>
       </div>
 
-      {/* File name */}
-      {name && (
-        <div className="absolute top-5 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded-lg bg-white/10
-                        backdrop-blur-md text-white/90 text-xs max-w-[50%] truncate">
-          {name}
-        </div>
+      <div className="fixed top-5 left-1/2 -translate-x-1/2 flex items-center gap-2 max-w-[50%] z-[202]">
+        {name && (
+          <div className="px-3 py-1.5 rounded-lg bg-white/10 backdrop-blur-md text-white/90 text-xs truncate">
+            {name}
+          </div>
+        )}
+        {total > 1 && (
+          <div className="px-2.5 py-1.5 rounded-lg bg-white/10 backdrop-blur-md text-white/80 text-xs tabular-nums">
+            {index + 1} / {total}
+          </div>
+        )}
+      </div>
+
+      {total > 1 && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              prev();
+            }}
+            className="fixed left-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20
+                       text-white flex items-center justify-center transition-colors backdrop-blur-md z-[202]"
+            title="上一张 (←)"
+          >
+            <ChevronLeft size={22} />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              next();
+            }}
+            className="fixed right-4 top-1/2 -translate-y-1/2 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20
+                       text-white flex items-center justify-center transition-colors backdrop-blur-md z-[202]"
+            title="下一张 (→)"
+          >
+            <ChevronRight size={22} />
+          </button>
+        </>
       )}
 
-      {/* Image */}
-      <img
-        src={src}
-        alt={name || "preview"}
-        draggable={false}
-        onClick={(e) => e.stopPropagation()}
-        onDoubleClick={onImageDoubleClick}
-        onMouseDown={onMouseDown}
-        className="max-w-[90vw] max-h-[85vh] object-contain shadow-2xl"
-        style={{
-          transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
-          transition: dragging ? "none" : "transform 150ms ease-out",
-          cursor: scale > 1 ? (dragging ? "grabbing" : "grab") : "zoom-in",
-        }}
-      />
-
-      {/* Bottom zoom toolbar */}
       <div
-        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1.5 rounded-xl
-                   bg-white/10 backdrop-blur-md"
+        className="fixed bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2 py-1.5 rounded-xl
+                   bg-white/10 backdrop-blur-md z-[202]"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -232,6 +293,6 @@ export default function ImageLightbox() {
           <RotateCcw size={15} />
         </button>
       </div>
-    </div>
+    </>
   );
 }

@@ -1275,6 +1275,15 @@ pub fn open_in_browser(url: String) -> Result<(), String> {
 /// Open a directory in the system terminal
 #[tauri::command]
 pub fn open_in_terminal(path: String) -> Result<(), String> {
+    // Empty path → fall back to user's home directory so the caller can request
+    // "just open a terminal" without knowing where the user lives on disk.
+    let path = if path.is_empty() {
+        std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string())
+    } else {
+        path
+    };
     #[cfg(target_os = "macos")]
     {
         // Prefer iTerm2, fall back to Terminal.app

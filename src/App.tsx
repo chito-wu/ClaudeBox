@@ -25,6 +25,7 @@ import { useLarkStore } from "./stores/larkStore";
 import { useSkillsStore } from "./stores/skillsStore";
 import { startLarkBot, onLarkEvent, larkSendNotification, larkSendCommand } from "./lib/lark-ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openDebugWindow } from "./lib/debugWindow";
 import { Loader2, AlertTriangle } from "lucide-react";
 
 // ── Error Boundary ────────────────────────────────────────────────────
@@ -63,9 +64,18 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 }
 
 export default function App() {
+  // Standalone debug-log window: same React bundle, routed via URL hash so we
+  // don't need a separate HTML/JS entry. Spawn from the main window via
+  // `openDebugWindow()`.
+  if (typeof window !== "undefined" && window.location.hash === "#debug") {
+    return (
+      <div className="w-screen h-screen flex bg-[#0a0a1a]">
+        <DebugPanel onClose={() => getCurrentWindow().close()} />
+      </div>
+    );
+  }
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tokenStatsOpen, setTokenStatsOpen] = useState(false);
-  const [debugOpen, setDebugOpen] = useState(false);
   const [claudeAvailable, setClaudeAvailable] = useState(true);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [updateDismissed, setUpdateDismissed] = useState(false);
@@ -118,12 +128,12 @@ export default function App() {
     useSkillsStore.getState().preloadGlobal();
   }, [settingsLoaded]);
 
-  // Keyboard shortcut: Ctrl/Cmd+Shift+D to toggle debug
+  // Keyboard shortcut: Ctrl/Cmd+Shift+D to open the debug-log window
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "d") {
         e.preventDefault();
-        setDebugOpen((v) => !v);
+        openDebugWindow().catch((err) => console.error("[app] open debug window failed:", err));
       }
     };
     window.addEventListener("keydown", handler);
@@ -485,14 +495,11 @@ export default function App() {
       />
       <ChatPanel claudeAvailable={claudeAvailable} />
 
-      {/* Debug panel */}
-      <DebugPanel visible={debugOpen} onClose={() => setDebugOpen(false)} />
-
       <SettingsDialog
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onClaudeStatusChange={setClaudeAvailable}
-        onOpenDebug={() => setDebugOpen(true)}
+        onOpenDebug={() => openDebugWindow().catch(() => {})}
         updateStatus={updateStatus}
         onRestart={applyUpdateAndRelaunch}
         onCheckUpdate={() => checkAndDownloadUpdate(setUpdateStatus)}

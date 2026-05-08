@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Download, Loader2, CheckCircle, XCircle, ExternalLink } from "lucide-react";
+import { Download, Loader2, CheckCircle, XCircle, ExternalLink, Copy, Check, Terminal } from "lucide-react";
 import {
   checkNodeVersion,
   downloadAndOpenNodeInstaller,
@@ -7,13 +7,62 @@ import {
   onInstallProgress,
   type InstallProgress,
   openInBrowser,
+  openInTerminal,
 } from "../../lib/claude-ipc";
 import { useT } from "../../lib/i18n";
+import { isWindows } from "../../lib/utils";
 
 const MIN_NODE_MAJOR = 22;
 
 type NodeStep = "idle" | "downloading" | "waiting" | "done" | "error";
 type ClaudeStep = "idle" | "installing" | "done" | "error";
+
+const NODE_MANUAL_CMD = isWindows
+  ? "winget install OpenJS.NodeJS.LTS"
+  : "brew install node@22";
+const CLAUDE_MANUAL_CMD = "npm install -g @anthropic-ai/claude-code";
+
+/** Hint shown on install failure: copy-able command + "open terminal" button. */
+function ManualInstallHint({ command }: { command: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+
+  const copy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard may be denied — user can still select & copy */ }
+  }, [command]);
+
+  return (
+    <div className="mt-2 rounded-lg border border-border bg-bg-secondary/40 p-2.5">
+      <p className="text-[11px] text-text-secondary leading-relaxed">{t("install.manualHint")}</p>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <code className="flex-1 px-2 py-1 rounded-md bg-code-bg text-[11px] font-mono text-text-primary
+                         break-all select-all">
+          {command}
+        </code>
+        <button
+          onClick={copy}
+          className="flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[11px]
+                     text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50 transition-colors"
+          title={t("install.copyCommand")}
+        >
+          {copied ? <Check size={11} className="text-success" /> : <Copy size={11} />}
+          <span>{copied ? t("install.copied") : t("install.copyCommand")}</span>
+        </button>
+      </div>
+      <button
+        onClick={() => openInTerminal("").catch(() => {})}
+        className="mt-1.5 flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+      >
+        <Terminal size={11} />
+        <span>{isWindows ? t("install.openCmd") : t("install.openTerminal")}</span>
+      </button>
+    </div>
+  );
+}
 
 // ── Node.js install section ────────────────────────────────────────
 
@@ -188,6 +237,7 @@ export function NodeStatusSection({
               className="flex items-center gap-1 text-[10px] text-text-muted hover:text-text-secondary"
             ><ExternalLink size={10} />{t("install.openUrl")}</button>
           </div>
+          <ManualInstallHint command={NODE_MANUAL_CMD} />
         </div>
       )}
     </div>
@@ -295,6 +345,7 @@ export function ClaudeInstallButton({
       <button onClick={() => { setError(null); startInstall(); }}
         className="px-2 py-1 rounded-md text-xs bg-accent text-white hover:bg-accent-hover transition-colors"
       >{t("install.retry")}</button>
+      <ManualInstallHint command={CLAUDE_MANUAL_CMD} />
     </div>
   );
 }

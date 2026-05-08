@@ -171,6 +171,7 @@ const en: TranslationDict = {
   "about.updateErrorHint": "Check your network, or try enabling a proxy and retry.",
   "about.updateErrorDetails": "Show error details",
   "about.retry": "Retry",
+  "about.manualDownload": "Manual download",
 
   // Token Stats
   "tokenStats.title": "Token Usage",
@@ -340,6 +341,11 @@ const en: TranslationDict = {
   "install.installClaude": "Install Claude Code",
   "install.needsNode": "Node.js required first",
   "install.nodeSuccess": "Node.js installed successfully!",
+  "install.manualHint": "Automatic install failed? You can also run the command manually in a terminal:",
+  "install.copyCommand": "Copy command",
+  "install.copied": "Copied",
+  "install.openTerminal": "Open Terminal",
+  "install.openCmd": "Open CMD",
 };
 
 const zh: TranslationDict = {
@@ -511,6 +517,7 @@ const zh: TranslationDict = {
   "about.updateErrorHint": "请检查网络,或尝试打开代理后重试。",
   "about.updateErrorDetails": "查看错误详情",
   "about.retry": "重试",
+  "about.manualDownload": "手动下载",
 
   // Token Stats
   "tokenStats.title": "Token 使用统计",
@@ -680,6 +687,11 @@ const zh: TranslationDict = {
   "install.installClaude": "安装 Claude Code",
   "install.needsNode": "请先安装 Node.js",
   "install.nodeSuccess": "Node.js 安装成功！",
+  "install.manualHint": "自动安装失败？也可以在终端中手动执行：",
+  "install.copyCommand": "复制命令",
+  "install.copied": "已复制",
+  "install.openTerminal": "打开终端",
+  "install.openCmd": "打开 CMD",
 };
 
 const dictionaries: Record<string, TranslationDict> = { en, zh };

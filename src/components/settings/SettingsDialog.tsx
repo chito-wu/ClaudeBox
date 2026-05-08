@@ -732,6 +732,13 @@ function AboutSection({
                     </p>
                   </div>
                 </div>
+                <button
+                  onClick={() => shellOpen("https://github.com/braverior/ClaudeBox/releases/latest").catch(() => {})}
+                  className="ml-[18px] inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+                >
+                  <ExternalLink size={11} />
+                  {t("about.manualDownload")}
+                </button>
                 <details className="text-[10px] text-text-muted ml-[18px]">
                   <summary className="cursor-pointer hover:text-text-secondary select-none">
                     {t("about.updateErrorDetails")}

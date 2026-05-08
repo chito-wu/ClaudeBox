@@ -25,11 +25,11 @@ const LEVEL_LABELS: Record<string, string> = {
 };
 
 interface DebugPanelProps {
-  visible: boolean;
-  onClose: () => void;
+  /** Hide the close button when running in its own window (the OS chrome handles it). */
+  onClose?: () => void;
 }
 
-export default function DebugPanel({ visible, onClose }: DebugPanelProps) {
+export default function DebugPanel({ onClose }: DebugPanelProps) {
   const [logs, setLogs] = useState<DebugEvent[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [filter, setFilter] = useState<string>("all");
@@ -69,8 +69,6 @@ export default function DebugPanel({ visible, onClose }: DebugPanelProps) {
     }
   }, [logs, autoScroll]);
 
-  if (!visible) return null;
-
   const filtered =
     filter === "all" ? logs : logs.filter((l) => l.level === filter);
 
@@ -89,7 +87,7 @@ export default function DebugPanel({ visible, onClose }: DebugPanelProps) {
   };
 
   return (
-    <div className="w-[480px] border-l border-border bg-[#0a0a1a] flex flex-col h-full">
+    <div className="w-full h-full bg-[#0a0a1a] flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-[#0f0f2a]">
         <div className="flex items-center gap-2">
@@ -107,13 +105,15 @@ export default function DebugPanel({ visible, onClose }: DebugPanelProps) {
           >
             <Trash2 size={12} />
           </button>
-          <button
-            onClick={onClose}
-            className="p-1 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary transition-colors"
-            title={t("debug.close")}
-          >
-            <X size={14} />
-          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 rounded hover:bg-bg-secondary text-text-muted hover:text-text-primary transition-colors"
+              title={t("debug.close")}
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 

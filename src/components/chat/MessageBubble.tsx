@@ -4,6 +4,7 @@ import remarkGfmSafe from "../../lib/remark-gfm-safe";
 import type { ChatMessage, ContentBlock, PendingInteraction } from "../../lib/stream-parser";
 import CodeBlock from "./CodeBlock";
 import ToolCallCard, { shortPath } from "./ToolCallCard";
+import GeneratedImagesGallery, { getGeneratedImagePaths } from "./GeneratedImagesGallery";
 import { formatTimeWithSeconds, formatDuration, formatFileSize } from "../../lib/utils";
 import { useT, type TFunction } from "../../lib/i18n";
 import { User, Loader2, Brain, ChevronDown, ChevronRight, Info, Image, Rocket, Sparkles, Layers, CheckCircle, CircleStop, Clock, Timer, Hash, DollarSign, RefreshCw, Share2, Copy, ImageIcon, Check } from "lucide-react";
@@ -424,7 +425,7 @@ export default function MessageBubble({
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const t = useT();
-  const openImage = useImageViewerStore((s) => s.openImage);
+  const openImages = useImageViewerStore((s) => s.openImages);
   const contentRef = useRef<HTMLDivElement>(null);
   const sharePopoverRef = useRef<HTMLDivElement>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -1011,33 +1012,77 @@ export default function MessageBubble({
       <div className="flex justify-end mb-4 px-4">
         <div className="flex items-start gap-2.5 max-w-[80%] min-w-0 w-fit">
           <div className="min-w-0 w-full flex flex-col items-end gap-1.5">
-            {/* Image previews */}
-            {imageAtts.length > 0 && (
-              <div className="flex flex-wrap gap-2 justify-end">
-                {imageAtts.map((att, i) => (
-                  <div
-                    key={i}
-                    className="relative rounded-xl overflow-hidden border border-border/50 cursor-pointer
-                               hover:border-accent/40 transition-colors shadow-sm"
-                    onClick={() => {
-                      if (att.dataUrl) openImage(att.dataUrl, att.name, att.path);
-                    }}
-                    title={`${att.name}\n点击查看`}
-                  >
-                    {att.dataUrl ? (
-                      <img src={att.dataUrl} alt={att.name} className="max-w-[240px] max-h-[180px] object-cover" />
-                    ) : (
-                      <div className="w-24 h-24 flex items-center justify-center bg-rose-500/5">
-                        <Image size={24} className="text-rose-400/40" />
+            {/* Image previews — gallery layout for multiple images */}
+            {imageAtts.length > 0 && (() => {
+              const galleryItems = imageAtts
+                .filter((a) => !!a.dataUrl)
+                .map((a) => ({ src: a.dataUrl as string, name: a.name, path: a.path }));
+              const openAt = (idx: number) => {
+                if (galleryItems.length > 0) {
+                  openImages(galleryItems, Math.min(idx, galleryItems.length - 1));
+                }
+              };
+
+              // Single image — keep the larger preview
+              if (imageAtts.length === 1) {
+                const att = imageAtts[0];
+                return (
+                  <div className="flex justify-end">
+                    <div
+                      className="relative rounded-xl overflow-hidden border border-border/50 cursor-pointer
+                                 hover:border-accent/40 transition-colors shadow-sm"
+                      onClick={() => openAt(0)}
+                      title={`${att.name}\n点击查看`}
+                    >
+                      {att.dataUrl ? (
+                        <img src={att.dataUrl} alt={att.name} className="max-w-[240px] max-h-[180px] object-cover" />
+                      ) : (
+                        <div className="w-24 h-24 flex items-center justify-center bg-rose-500/5">
+                          <Image size={24} className="text-rose-400/40" />
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
+                        <span className="text-[11px] text-white/90 truncate block">{att.name}</span>
                       </div>
-                    )}
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
-                      <span className="text-[11px] text-white/90 truncate block">{att.name}</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
+                );
+              }
+
+              // 2+ images — compact album grid (square thumbs, max 4 visible, "+N" overlay on the last)
+              const VISIBLE = 4;
+              const visible = imageAtts.slice(0, VISIBLE);
+              const hidden = imageAtts.length - VISIBLE;
+              return (
+                <div className="grid grid-cols-2 gap-1.5 max-w-[240px] justify-self-end">
+                  {visible.map((att, i) => {
+                    const isLast = i === VISIBLE - 1 && hidden > 0;
+                    return (
+                      <div
+                        key={i}
+                        className="relative aspect-square rounded-lg overflow-hidden border border-border/50 cursor-pointer
+                                   hover:border-accent/40 transition-colors shadow-sm"
+                        onClick={() => openAt(i)}
+                        title={`${att.name}\n点击查看`}
+                      >
+                        {att.dataUrl ? (
+                          <img src={att.dataUrl} alt={att.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-rose-500/5">
+                            <Image size={20} className="text-rose-400/40" />
+                          </div>
+                        )}
+                        {isLast && (
+                          <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
+                            <span className="text-white text-lg font-medium tabular-nums">+{hidden}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {/* Text file attachment tags */}
             {textAtts.length > 0 && (
               <div className="flex flex-wrap gap-1.5 justify-end">
@@ -1238,14 +1283,19 @@ export default function MessageBubble({
               // Pass interactive props only to the last tool_use block that matches
               const isInteractiveTool =
                 block.name === "AskUserQuestion" || block.name === "ExitPlanMode";
+              const generatedImages = getGeneratedImagePaths(result);
               return (
-                <MemoToolCallCard
-                  key={key}
-                  block={block}
-                  result={result}
-                  pendingInteraction={isInteractiveTool ? pendingInteraction : undefined}
-                  onRespond={isInteractiveTool ? onRespond : undefined}
-                />
+                <div key={key} className="space-y-1.5">
+                  <MemoToolCallCard
+                    block={block}
+                    result={result}
+                    pendingInteraction={isInteractiveTool ? pendingInteraction : undefined}
+                    onRespond={isInteractiveTool ? onRespond : undefined}
+                  />
+                  {generatedImages.length > 0 && (
+                    <GeneratedImagesGallery paths={generatedImages} />
+                  )}
+                </div>
               );
             }
 

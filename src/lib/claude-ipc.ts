@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, emit, type UnlistenFn } from "@tauri-apps/api/event";
 import type { StreamPayload, DebugEvent } from "./stream-parser";
 
 export interface SendMessageRequest {
@@ -258,15 +258,22 @@ export async function getContextTokens(sessionId: string, projectPath: string): 
 
 /**
  * Frontend-side debug event bus.
- * Used by modules like updater to emit logs visible in the Debug Panel.
+ * Backed by Tauri's IPC event system so events broadcast across windows
+ * (e.g. the standalone Debug Window can receive logs emitted by the main
+ * window's updater module).
  */
 type AppDebugListener = (event: DebugEvent) => void;
-const appDebugListeners = new Set<AppDebugListener>();
 
 /** Subscribe to frontend-emitted debug events. Returns unsubscribe fn. */
 export function onAppDebug(fn: AppDebugListener): () => void {
-  appDebugListeners.add(fn);
-  return () => { appDebugListeners.delete(fn); };
+  let alive = true;
+  const unlistenP = listen<DebugEvent>("app-debug", (event) => {
+    if (alive) fn(event.payload);
+  });
+  return () => {
+    alive = false;
+    unlistenP.then((u) => u()).catch(() => {});
+  };
 }
 
 /**
@@ -284,5 +291,5 @@ export function emitDebug(
     message,
     timestamp: Date.now(),
   };
-  for (const fn of appDebugListeners) fn(event);
+  emit("app-debug", event).catch(() => {});
 }

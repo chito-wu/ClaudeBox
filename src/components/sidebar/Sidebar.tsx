@@ -14,6 +14,7 @@ import {
   Loader2,
   Send,
   History,
+  ExternalLink,
 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -140,13 +141,20 @@ export default function Sidebar({
 
     if (updateStatus.error) {
       return (
-        <div className="space-y-0.5">
+        <div className="space-y-1">
           <span className="text-xs text-red-400">
             {t("version.checkFailed")}
           </span>
           <p className="text-[10px] text-text-muted break-all line-clamp-2" title={updateStatus.error}>
             {updateStatus.error}
           </p>
+          <button
+            onClick={() => shellOpen("https://github.com/braverior/ClaudeBox/releases/latest").catch(() => {})}
+            className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+          >
+            <ExternalLink size={11} />
+            {t("about.manualDownload")}
+          </button>
         </div>
       );
     }

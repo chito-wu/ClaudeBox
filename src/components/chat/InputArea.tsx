@@ -1016,7 +1016,7 @@ export default function InputArea({
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
-    if ((!trimmed && attachments.length === 0) || disabled) return;
+    if (!trimmed || disabled) return;
     onSend(trimmed, attachments.length > 0 ? attachments : undefined);
     setInput("");
     setAttachments([]);
@@ -1048,7 +1048,7 @@ export default function InputArea({
     textareaRef.current?.focus();
   }, []);
 
-  const hasContent = input.trim() || attachments.length > 0;
+  const hasContent = input.trim();
 
   return (
     <div className="px-4 pt-1 pb-4">
