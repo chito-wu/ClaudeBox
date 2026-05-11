@@ -315,6 +315,12 @@ function waitForResponse(requestId) {
  */
 function makeCanUseTool(allowedTools, cwd) {
   const allowedSet = new Set(allowedTools);
+  // Windows uses "PowerShell" as the shell tool name; Unix uses "Bash".
+  // Treat them as the same concept so a UI-selected "Bash" also covers
+  // PowerShell invocations on Windows.
+  if (allowedSet.has("Bash")) allowedSet.add("PowerShell");
+  if (allowedSet.has("PowerShell")) allowedSet.add("Bash");
+  console.error(`[bridge] canUseTool allowlist: [${[...allowedSet].join(", ")}]`);
 
   return async (toolName, input, _options) => {
     // AskUserQuestion — send to frontend, wait for user answer
@@ -400,6 +406,7 @@ function makeCanUseTool(allowedTools, cwd) {
     }
 
     // Tool NOT in allowedTools → ask user for permission
+    console.error(`[bridge] canUseTool prompting user: toolName="${toolName}" not in allowlist`);
     const requestId = nextRequestId();
     emit({
       type: "tool_permission",
@@ -572,12 +579,20 @@ async function main() {
   if (contextWindow === "1m") options.betas = ["context-1m-2025-08-07"];
   if (resume) options.resume = resume;
   if (permissionMode) options.permissionMode = permissionMode;
-  if (allowedTools && allowedTools.length > 0) {
-    const sdkTools = allowedTools.filter((t) => t !== "MCP");
-    if (sdkTools.length > 0) {
-      options.allowedTools = sdkTools;
-    }
-  }
+  // NOTE: Intentionally NOT forwarding allowedTools to the SDK.
+  //
+  // The SDK would turn it into `--allowedTools a,b,c` on the CLI side, which
+  // the Claude CLI uses to auto-approve tools without invoking the
+  // `--permission-prompt-tool stdio` hook. On Windows that CLI-side
+  // auto-approval path is unreliable (the .cmd wrapper goes through cmd.exe
+  // with shell:true and the CSV arg is not honored consistently) — users see
+  // a permission prompt on every tool call even with the full tool list
+  // checked in the UI.
+  //
+  // `canUseTool` (below) already enforces the exact same allowlist and works
+  // identically on all platforms, so it is the single source of truth. The
+  // tradeoff is one extra stdio round-trip per tool call, which is
+  // imperceptible in practice.
 
   // Workspace boundary — prevent Claude from writing outside the project
   if (cwd) {

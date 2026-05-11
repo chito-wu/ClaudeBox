@@ -4,6 +4,12 @@ ClaudeBox 的所有版本更新都记录在这里。
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.9] - 2026-05-11
+
+### 修复
+- Windows 勾选工具后每步仍要确认：Claude Code CLI 在 Windows 上把 shell 工具注册为 `PowerShell`（Unix/macOS 才是 `Bash`），旧版 allowlist 只认 `Bash` 导致 `canUseTool` 每次都走到"询问用户"分支。现在在 sidecar 中把 `Bash` / `PowerShell` 互为别名放行
+- 统一权限判定路径：不再把 `allowedTools` 透传给 SDK（Windows `.cmd` + `cmd.exe /c` 链路上 `--allowedTools` 不稳定），改由 `canUseTool` 作为唯一的放行源，跨平台行为一致
+
 ## [0.5.8] - 2026-05-08
 
 ### 新增
