@@ -24,6 +24,7 @@ import { useTokenUsageStore } from "./stores/tokenUsageStore";
 import { useLarkStore } from "./stores/larkStore";
 import { useSkillsStore } from "./stores/skillsStore";
 import { startLarkBot, onLarkEvent, larkSendNotification, larkSendCommand } from "./lib/lark-ipc";
+import { resolveModelCreds } from "./lib/providers";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openDebugWindow } from "./lib/debugWindow";
 import { Loader2, AlertTriangle } from "lucide-react";
@@ -447,13 +448,14 @@ export default function App() {
     if (!larkConfig.autoConnect) return;
     if (!larkConfig.appId || !larkConfig.appSecret) return;
 
+    const creds = resolveModelCreds(settings.model, settings.models, settings.apiKey, settings.baseUrl);
     startLarkBot({
       app_id: larkConfig.appId,
       app_secret: larkConfig.appSecret,
       project_dir: settings.workingDirectory || undefined,
       model: settings.model || undefined,
-      api_key: settings.apiKey || undefined,
-      base_url: settings.baseUrl || undefined,
+      api_key: creds.apiKey || undefined,
+      base_url: creds.baseUrl || undefined,
     }).then(() => {
       useLarkStore.getState().setStatus("connecting");
     }).catch((err) => {

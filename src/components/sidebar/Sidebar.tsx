@@ -24,6 +24,7 @@ import { useChatStore } from "../../stores/chatStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLarkStore, type LarkStatus } from "../../stores/larkStore";
 import { startLarkBot, stopLarkBot } from "../../lib/lark-ipc";
+import { resolveModelCreds } from "../../lib/providers";
 import { useT } from "../../lib/i18n";
 import { startWindowDrag, isWindows, handleTitleBarDoubleClick } from "../../lib/utils";
 import type { UpdateStatus } from "../../lib/updater";
@@ -287,13 +288,14 @@ export default function Sidebar({
       setLarkConnecting(true);
       setLarkError(null);
       try {
+        const creds = resolveModelCreds(settings.model, settings.models, settings.apiKey, settings.baseUrl);
         await startLarkBot({
           app_id: larkConfig.appId,
           app_secret: larkConfig.appSecret,
           project_dir: settings.workingDirectory || undefined,
           model: settings.model || undefined,
-          api_key: settings.apiKey || undefined,
-          base_url: settings.baseUrl || undefined,
+          api_key: creds.apiKey || undefined,
+          base_url: creds.baseUrl || undefined,
         });
         setLarkStatus("connecting");
       } catch (err) {

@@ -4,6 +4,11 @@ ClaudeBox 的所有版本更新都记录在这里。
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.10] - 2026-05-14
+
+### 修复
+- 飞书机器人在 per-model apiKey 场景下回复 “未配置 API Key”：App 启动自动重连和侧边栏开关启动两条路径仍直接读全局 `settings.apiKey`，未跟随 v0.5.7 的解析方案。改为统一走 `resolveModelCreds()`，与设置弹窗手动启动一致——优先取当前模型自带的 apiKey，没有再回退到全局
+
 ## [0.5.9] - 2026-05-11
 
 ### 修复
