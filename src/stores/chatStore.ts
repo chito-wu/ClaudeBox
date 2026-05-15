@@ -41,6 +41,18 @@ export interface Session {
   pinned?: boolean;
 }
 
+export interface QueuedMessage {
+  id: string;
+  content: string;
+  attachments?: { name: string; type: "text" | "image" | "document"; path: string; dataUrl?: string; size?: number }[];
+  enqueuedAt: number;
+}
+
+export interface InputDraft {
+  content: string;
+  attachments: { name: string; type: "text" | "image" | "document"; path: string; dataUrl?: string; size?: number }[];
+}
+
 export const DEFAULT_TOOLS = ["Read", "Glob", "Grep", "TodoWrite", "Write", "Edit", "Bash", "WebFetch", "WebSearch", "NotebookEdit", "Agent", "MCP"];
 
 const AUTO_MERGE_TOOLS = ["Read", "Glob", "Grep", "TodoWrite"];
@@ -60,6 +72,12 @@ interface ChatState {
   streamStartTimes: Record<string, number>;
   /** Per-session streaming state */
   streamingSessions: Record<string, boolean>;
+  /** Per-session queue of messages submitted while a task is running. */
+  messageQueue: Record<string, QueuedMessage[]>;
+  /** Per-session input drafts, restored when the user switches back. */
+  inputDrafts: Record<string, InputDraft>;
+  /** Session id whose git diff dialog is currently open (null = closed). */
+  viewDiffSessionId: string | null;
   streamError: string | null;
   /** Pending interactive tool request (AskUserQuestion / ExitPlanMode) */
   pendingInteraction: PendingInteraction | null;
@@ -82,7 +100,7 @@ interface ChatState {
   addSystemMessage: (sessionId: string, text: string) => void;
   addLaunchMessage: (sessionId: string, pid: number, resumeFrom?: string) => void;
   handleStreamData: (sessionId: string, data: string, stream: string) => void;
-  handleStreamDone: (sessionId: string, error?: string) => void;
+  handleStreamDone: (sessionId: string, error?: string, force?: boolean) => void;
   setStreaming: (sessionId: string, streaming: boolean) => void;
   clearError: () => void;
   /** Clear the pending interaction after it has been responded to */
@@ -99,6 +117,22 @@ interface ChatState {
   markUnread: (id: string) => void;
   /** Clear unread flag (when user opens / switches to the session). */
   clearUnread: (id: string) => void;
+  /** Enqueue a message to be sent automatically after the current task finishes. */
+  enqueueMessage: (sessionId: string, content: string, attachments?: QueuedMessage["attachments"]) => void;
+  /** Remove a single queued message. */
+  removeQueuedMessage: (sessionId: string, queueItemId: string) => void;
+  /** Pop the head of the queue (returns the removed item or null). */
+  popQueuedMessage: (sessionId: string) => QueuedMessage | null;
+  /** Drop the entire queue for a session (e.g. on stop). */
+  clearMessageQueue: (sessionId: string) => void;
+  /** Save (or clear) the input draft for a session. Empty drafts are removed. */
+  saveInputDraft: (sessionId: string, draft: InputDraft) => void;
+  /** Drop the input draft for a session. */
+  clearInputDraft: (sessionId: string) => void;
+  /** Open the git diff dialog for a given session. */
+  openDiffDialog: (sessionId: string) => void;
+  /** Close the git diff dialog. */
+  closeDiffDialog: () => void;
 }
 
 // ── File storage keys ───────────────────────────────────────────────
@@ -284,6 +318,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   stderrLogs: {},
   streamStartTimes: {},
   streamingSessions: {},
+  messageQueue: {},
+  inputDrafts: {},
+  viewDiffSessionId: null,
   streamError: null,
   pendingInteraction: null,
   answeredTools: {},
@@ -756,7 +793,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  handleStreamDone: (sessionId, error) => {
+  handleStreamDone: (sessionId, error, force) => {
+    // Guard against late `done` events from a previous child process that
+    // exited *after* the auto-queue picked up the next message and started a
+    // fresh stream. result-event already flipped streaming to false; if it's
+    // back to true now it means a new process is running for this session and
+    // we must not clobber its streaming state. Errors and explicit
+    // user-initiated stops (force=true) always pass through.
+    const currentlyStreaming = !!get().streamingSessions[sessionId];
+    if (!force && currentlyStreaming && !error) {
+      return;
+    }
     const msgs = [...(get().messages[sessionId] || [])];
     for (let i = 0; i < msgs.length; i++) {
       if (msgs[i].isStreaming) {
@@ -866,4 +913,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
     saveSessions(next);
     set({ sessions: next });
   },
+
+  enqueueMessage: (sessionId, content, attachments) => {
+    const trimmed = content.trim();
+    if (!trimmed) return;
+    const item: QueuedMessage = {
+      id: v4Style(),
+      content: trimmed,
+      attachments,
+      enqueuedAt: Date.now(),
+    };
+    const current = get().messageQueue[sessionId] || [];
+    set({ messageQueue: { ...get().messageQueue, [sessionId]: [...current, item] } });
+  },
+
+  removeQueuedMessage: (sessionId, queueItemId) => {
+    const current = get().messageQueue[sessionId];
+    if (!current || current.length === 0) return;
+    const next = current.filter((q) => q.id !== queueItemId);
+    if (next.length === current.length) return;
+    set({ messageQueue: { ...get().messageQueue, [sessionId]: next } });
+  },
+
+  popQueuedMessage: (sessionId) => {
+    const current = get().messageQueue[sessionId];
+    if (!current || current.length === 0) return null;
+    const [head, ...rest] = current;
+    set({ messageQueue: { ...get().messageQueue, [sessionId]: rest } });
+    return head;
+  },
+
+  clearMessageQueue: (sessionId) => {
+    const queue = get().messageQueue[sessionId];
+    if (!queue || queue.length === 0) return;
+    set({ messageQueue: { ...get().messageQueue, [sessionId]: [] } });
+  },
+
+  saveInputDraft: (sessionId, draft) => {
+    const isEmpty = !draft.content.trim() && draft.attachments.length === 0;
+    const existing = get().inputDrafts[sessionId];
+    if (isEmpty) {
+      if (!existing) return;
+      const next = { ...get().inputDrafts };
+      delete next[sessionId];
+      set({ inputDrafts: next });
+      return;
+    }
+    set({ inputDrafts: { ...get().inputDrafts, [sessionId]: draft } });
+  },
+
+  clearInputDraft: (sessionId) => {
+    if (!get().inputDrafts[sessionId]) return;
+    const next = { ...get().inputDrafts };
+    delete next[sessionId];
+    set({ inputDrafts: next });
+  },
+
+  openDiffDialog: (sessionId) => set({ viewDiffSessionId: sessionId }),
+  closeDiffDialog: () => set({ viewDiffSessionId: null }),
 }));

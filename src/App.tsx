@@ -7,6 +7,7 @@ import DebugPanel from "./components/debug/DebugPanel";
 import UpdateToast from "./components/UpdateToast";
 import ReleaseNotesDialog, { type ReleaseNotesMode } from "./components/ReleaseNotesDialog";
 import ChangelogDialog from "./components/ChangelogDialog";
+import GitDiffDialog from "./components/GitDiffDialog";
 import ImageLightbox from "./components/chat/ImageLightbox";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { checkClaudeInstalled, applySystemProxy, emitDebug, sendMessage, onStream } from "./lib/claude-ipc";
@@ -265,21 +266,29 @@ export default function App() {
     chatStore.switchSession(sessionId);
 
     // Add user message and start streaming
-    chatStore.addUserMessage(sessionId, `[飞书] ${msg.prompt}`);
+    chatStore.addUserMessage(sessionId, msg.prompt);
+    chatStore.addSystemMessage(sessionId, "__from_lark__");
     chatStore.setStreaming(sessionId, true);
 
     // Send through normal chat flow (same as manual typing)
     try {
       const session = chatStore.sessions.find((s) => s.id === sessionId);
       const resumeId = session?.claudeSessionId || undefined;
+      const effectiveModel = session?.model || settings.model;
+      const creds = resolveModelCreds(
+        effectiveModel,
+        settings.models,
+        settings.apiKey,
+        settings.baseUrl,
+      );
       await sendMessage({
         session_id: sessionId,
         message: msg.prompt,
         cwd: projectPath,
-        model: settings.model || undefined,
+        model: effectiveModel || undefined,
         permission_mode: "auto",
-        api_key: settings.apiKey || undefined,
-        base_url: settings.baseUrl || undefined,
+        api_key: creds.apiKey || undefined,
+        base_url: creds.baseUrl || undefined,
         resume_id: resumeId,
         effort: settings.effort || undefined,
         haiku_model: settings.haikuModel || undefined,
@@ -424,7 +433,6 @@ export default function App() {
           const projectDir = msg.task.projectPath || settings.workingDirectory || `lark://${msg.task.projectName || "task"}`;
           const sessionId = chatStore.createSession(projectDir, settings.defaultModel || settings.model || "claude-sonnet-4-20250514", "auto");
           larkStore.setTaskSession(msg.task.id, sessionId);
-          chatStore.addSystemMessage(sessionId, `[飞书任务] ${msg.task.description}`);
         } else if (msg.type === "task_updated") {
           larkStore.updateTask(msg.task_id, { status: msg.status });
         } else if (msg.type === "lark_execute") {
@@ -526,6 +534,8 @@ export default function App() {
         onClose={() => setChangelogOpen(false)}
       />
 
+      <GitDiffDialogContainer />
+
       <ImageLightbox />
 
       {/* Close confirm dialog */}
@@ -574,5 +584,23 @@ export default function App() {
         )}
     </div>
     </ErrorBoundary>
+  );
+}
+
+/** Connector that subscribes to chat store and renders the diff dialog. */
+function GitDiffDialogContainer() {
+  const viewDiffSessionId = useChatStore((s) => s.viewDiffSessionId);
+  const closeDiffDialog = useChatStore((s) => s.closeDiffDialog);
+  const sessionsList = useChatStore((s) => s.sessions);
+  const target = viewDiffSessionId
+    ? sessionsList.find((s) => s.id === viewDiffSessionId) ?? null
+    : null;
+  return (
+    <GitDiffDialog
+      open={!!target}
+      projectPath={target?.projectPath ?? null}
+      projectName={target?.projectName ?? null}
+      onClose={closeDiffDialog}
+    />
   );
 }

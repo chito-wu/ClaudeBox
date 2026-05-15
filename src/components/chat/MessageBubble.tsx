@@ -7,7 +7,7 @@ import ToolCallCard, { shortPath } from "./ToolCallCard";
 import GeneratedImagesGallery, { getGeneratedImagePaths } from "./GeneratedImagesGallery";
 import { formatTimeWithSeconds, formatDuration, formatFileSize } from "../../lib/utils";
 import { useT, type TFunction } from "../../lib/i18n";
-import { User, Loader2, Brain, ChevronDown, ChevronRight, Info, Image, Rocket, Sparkles, Layers, CheckCircle, CircleStop, Clock, Timer, Hash, DollarSign, RefreshCw, Share2, Copy, ImageIcon, Check } from "lucide-react";
+import { User, Loader2, Brain, ChevronDown, ChevronRight, Info, Image, Rocket, Sparkles, Layers, CheckCircle, CircleStop, Clock, Timer, Hash, DollarSign, RefreshCw, Share2, Copy, ImageIcon, Check, MessageSquare } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import QRCode from "qrcode";
 import logoUrl from "../../assets/app-icon.png";
@@ -1126,6 +1126,25 @@ export default function MessageBubble({
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-orange-500/5 border border-orange-500/20">
                 <span className="text-xs text-orange-400">{t("chat.stoppedByUser")}</span>
+                <span className="text-[10px] text-text-muted">{formatTimeWithSeconds(message.timestamp)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // Special card for messages forwarded from Lark
+    if (text === "__from_lark__") {
+      return (
+        <div className="flex justify-start px-4 mb-1.5 mt-1">
+          <div className="flex items-start gap-2.5 max-w-[90%] min-w-0">
+            <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-sky-500/10 flex items-center justify-center mt-0.5">
+              <MessageSquare size={14} className="text-sky-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-sky-500/5 border border-sky-500/20">
+                <span className="text-xs text-sky-400">{t("chat.fromLark")}</span>
                 <span className="text-[10px] text-text-muted">{formatTimeWithSeconds(message.timestamp)}</span>
               </div>
             </div>

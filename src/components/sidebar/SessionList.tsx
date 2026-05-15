@@ -9,6 +9,7 @@ import {
   PinOff,
   ChevronDown,
   ChevronRight,
+  GitCompare,
 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { useT } from "../../lib/i18n";
@@ -34,6 +35,7 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
     removeSession,
     reorderPinned,
     togglePinned,
+    openDiffDialog,
   } = useChatStore();
   const t = useT();
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -130,6 +132,14 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
     setContextMenu(null);
     shellOpen(projectPath);
   }, []);
+
+  const handleViewDiff = useCallback(
+    (sessionId: string) => {
+      setContextMenu(null);
+      openDiffDialog(sessionId);
+    },
+    [openDiffDialog]
+  );
 
   const handleTogglePinned = useCallback(
     (sessionId: string) => {
@@ -237,16 +247,27 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
         onContextMenu={(e) =>
           handleContextMenu(e, session.id, session.projectPath, !!session.pinned)
         }
-        className={`group relative flex items-center gap-2 pl-3 pr-3 py-2.5 rounded-lg mb-0.5 cursor-pointer transition-colors ${
+        className={`group relative flex items-center gap-2 pl-3 pr-3 py-2.5 rounded-lg mb-0.5 cursor-pointer overflow-hidden transition-colors ${
           isActive
             ? "bg-bg-tertiary/50 text-text-primary"
-            : "text-text-secondary hover:bg-bg-secondary/50 hover:text-text-primary"
+            : "text-text-secondary hover:bg-bg-tertiary/35 hover:text-text-primary"
         } ${isDragging ? "opacity-40" : ""} ${
           isDropTarget ? "ring-1 ring-accent/60" : ""
         }`}
       >
+        {/* Left indicator bar — shown when active or running */}
+        {(isActive || isRunning) && (
+          <span
+            className="absolute left-0 top-1.5 bottom-1.5 w-[2.5px] bg-accent rounded-r"
+            aria-hidden
+          />
+        )}
+        {/* Running: gradient wave sweeping from left to right */}
         {isRunning && (
-          <span className="absolute left-0 top-2 bottom-2 w-[2px] bg-accent rounded-r animate-pulse" />
+          <span
+            className="absolute inset-y-0 left-0 w-2/3 bg-gradient-to-r from-accent/25 via-accent/10 to-transparent animate-running-sweep pointer-events-none"
+            aria-hidden
+          />
         )}
         <FolderOpen size={14} className="flex-shrink-0 opacity-60" />
         <div className="flex-1 min-w-0">
@@ -265,16 +286,6 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
             <span>{formatRelativeDate(session.updatedAt)}</span>
           </div>
         </div>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            handleDelete(session.id);
-          }}
-          className="flex-shrink-0 opacity-0 group-hover:opacity-100 p-1 hover:text-error transition-all"
-          title={t("session.delete")}
-        >
-          <Trash2 size={12} />
-        </button>
       </div>
     );
   };
@@ -353,6 +364,13 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
           >
             <FolderOpen size={14} />
             {t("session.openFolder")}
+          </button>
+          <button
+            onClick={() => handleViewDiff(contextMenu.sessionId)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary transition-colors"
+          >
+            <GitCompare size={14} />
+            {t("session.viewDiff")}
           </button>
           <div className="my-1 border-t border-border" />
           <button

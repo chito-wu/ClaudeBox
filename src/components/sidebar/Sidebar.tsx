@@ -509,6 +509,14 @@ export default function Sidebar({
         onDoubleClick={handleTitleBarDoubleClick}
         className={`flex items-center ${isWindows ? "pl-4" : "pl-[78px]"} pr-3 h-14 flex-shrink-0`}
       >
+        {isWindows && (
+          <h1
+            data-tauri-drag-region
+            className="text-sm font-bold text-text-primary tracking-wide pointer-events-none"
+          >
+            ClaudeBox
+          </h1>
+        )}
         {/* Drag spacer — fills remaining space for window dragging */}
         <div className="flex-1" data-tauri-drag-region />
         <button

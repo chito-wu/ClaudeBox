@@ -578,25 +578,25 @@ export default function ToolCallCard({ block, result, pendingInteraction, onResp
           {/* Edit diff view */}
           {toolName === "Edit" ? (
             <div className="mt-2">
-              <div className="text-xs text-text-muted mb-1">
+              <div className="text-xs text-text-muted mb-1 font-mono">
                 {String(input.file_path || "")}
                 {input.replace_all ? <span className="ml-2 text-amber-400">(replace all)</span> : null}
               </div>
-              <div className="text-xs rounded overflow-hidden border border-border">
+              <div className="rounded overflow-hidden border border-border">
                 {(input.old_string as string) && (
-                  <pre className="bg-red-500/10 p-2 overflow-x-auto max-h-36 overflow-y-auto whitespace-pre-wrap border-b border-border">
+                  <pre className="bg-error/10 p-2 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre font-mono text-[13px] leading-[1.55] border-b border-border" style={{ tabSize: 4 }}>
                     {String(input.old_string).split("\n").map((line, i) => (
-                      <div key={i} className="text-red-400">
-                        <span className="select-none opacity-50 mr-2">-</span>{line}
+                      <div key={i} className="text-error/95">
+                        <span className="select-none opacity-50 mr-2">-</span>{line || " "}
                       </div>
                     ))}
                   </pre>
                 )}
                 {(input.new_string as string) && (
-                  <pre className="bg-green-500/10 p-2 overflow-x-auto max-h-36 overflow-y-auto whitespace-pre-wrap">
+                  <pre className="bg-success/10 p-2 overflow-x-auto max-h-64 overflow-y-auto whitespace-pre font-mono text-[13px] leading-[1.55]" style={{ tabSize: 4 }}>
                     {String(input.new_string).split("\n").map((line, i) => (
-                      <div key={i} className="text-green-400">
-                        <span className="select-none opacity-50 mr-2">+</span>{line}
+                      <div key={i} className="text-success/95">
+                        <span className="select-none opacity-50 mr-2">+</span>{line || " "}
                       </div>
                     ))}
                   </pre>

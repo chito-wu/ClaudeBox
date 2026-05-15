@@ -4,7 +4,7 @@ import {
   Wrench, Check, Plus, X, FileCode2, FileText,
   Image, FileType, Terminal, Globe, Settings2, Cpu, Eraser,
   Loader2, SquareTerminal, Zap, Search, RefreshCw,
-  Presentation, FileSpreadsheet,
+  Presentation, FileSpreadsheet, ListPlus,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readImageBase64, saveClipboardImage, listGitBranches, checkoutGitBranch, gitDiffFiles, getFileSize } from "../../lib/claude-ipc";
@@ -126,6 +126,16 @@ interface InputAreaProps {
   contextWindow?: number;
   /** Timestamp when current stream started — drives the elapsed counter in placeholder */
   streamStartTime?: number;
+  /** Pending queue (only meaningful when isStreaming, but kept for delete-after-stop UX) */
+  queue?: { id: string; content: string; enqueuedAt: number }[];
+  /** Remove a queued message by id */
+  onRemoveQueued?: (id: string) => void;
+  /** Identifier of the active session — when this changes the local draft is swapped */
+  sessionKey?: string | null;
+  /** Initial draft to load when the active session changes */
+  initialDraft?: { content: string; attachments: Attachment[] };
+  /** Persist the current draft for a session (called on session switch and on send-clear) */
+  onPersistDraft?: (sessionId: string, draft: { content: string; attachments: Attachment[] }) => void;
 }
 
 const USER_TOOLS = [
@@ -863,9 +873,14 @@ export default function InputArea({
   contextTokens,
   contextWindow,
   streamStartTime,
+  queue = [],
+  onRemoveQueued,
+  sessionKey,
+  initialDraft,
+  onPersistDraft,
 }: InputAreaProps) {
-  const [input, setInput] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [input, setInput] = useState(initialDraft?.content ?? "");
+  const [attachments, setAttachments] = useState<Attachment[]>(initialDraft?.attachments ?? []);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const t = useT();
   const openImage = useImageViewerStore((s) => s.openImage);
@@ -1020,18 +1035,50 @@ export default function InputArea({
     onSend(trimmed, attachments.length > 0 ? attachments : undefined);
     setInput("");
     setAttachments([]);
+    if (sessionKey && onPersistDraft) {
+      onPersistDraft(sessionKey, { content: "", attachments: [] });
+    }
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
-  }, [input, attachments, disabled, onSend]);
+  }, [input, attachments, disabled, onSend, sessionKey, onPersistDraft]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (isStreaming) return;
       handleSend();
     }
   };
+
+  // Track latest input/attachments in refs so the session-swap effect can
+  // persist them without re-running on every keystroke.
+  const inputRef = useRef(input);
+  const attachmentsRef = useRef(attachments);
+  useEffect(() => { inputRef.current = input; }, [input]);
+  useEffect(() => { attachmentsRef.current = attachments; }, [attachments]);
+
+  // Swap the local draft when the active session changes:
+  //  1. Persist the current input/attachments for the *previous* session
+  //  2. Load the new session's saved draft (or clear)
+  const prevSessionKeyRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const prev = prevSessionKeyRef.current;
+    prevSessionKeyRef.current = sessionKey ?? null;
+    if (prev === undefined) return;            // first mount — initial state already set
+    if (prev === (sessionKey ?? null)) return; // no real change
+
+    if (prev && onPersistDraft) {
+      onPersistDraft(prev, {
+        content: inputRef.current,
+        attachments: attachmentsRef.current,
+      });
+    }
+    setInput(initialDraft?.content ?? "");
+    setAttachments(initialDraft?.attachments ?? []);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  }, [sessionKey, initialDraft, onPersistDraft]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -1057,6 +1104,49 @@ export default function InputArea({
         <div className={`rounded-2xl border transition-colors overflow-visible
           ${disabled ? "opacity-50 border-border bg-input-bg" : "border-border bg-input-bg focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/20"}`}
         >
+          {/* Pending queue */}
+          {queue.length > 0 && (
+            <div className="px-3 pt-2.5 pb-1.5 border-b border-border/40">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <ListPlus size={11} className="text-accent" />
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-text-muted">
+                  {t("input.queueTitle")}
+                </span>
+                <span className="text-[10px] text-text-muted">{queue.length}</span>
+                <span className="text-[10px] text-text-muted ml-auto">
+                  {t("input.queueHint")}
+                </span>
+              </div>
+              <div className="flex flex-col gap-1">
+                {queue.map((q, i) => (
+                  <div
+                    key={q.id}
+                    className="group flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-bg-tertiary/20 hover:bg-bg-tertiary/35 transition-colors"
+                  >
+                    <span className="text-[10px] text-text-muted w-5 flex-shrink-0">
+                      #{i + 1}
+                    </span>
+                    <span
+                      className="flex-1 truncate text-text-secondary"
+                      title={q.content}
+                    >
+                      {q.content}
+                    </span>
+                    {onRemoveQueued && (
+                      <button
+                        onClick={() => onRemoveQueued(q.id)}
+                        className="opacity-0 group-hover:opacity-100 text-text-muted hover:text-error transition-all"
+                        title={t("input.queueRemove")}
+                      >
+                        <X size={11} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Attachment area */}
           {attachments.length > 0 && (
             <div className="px-3 pt-3 pb-1">
@@ -1190,14 +1280,28 @@ export default function InputArea({
 
             <div className="flex items-center gap-1.5 flex-shrink-0">
               {isStreaming ? (
-                <button
-                  onClick={onStop}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg
-                             bg-error/15 text-error hover:bg-error/25 transition-colors"
-                  title={t("input.stop")}
-                >
-                  <Square size={14} />
-                </button>
+                <>
+                  <button
+                    onClick={handleSend}
+                    disabled={!hasContent || disabled}
+                    className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all
+                      ${hasContent && !disabled
+                        ? "bg-bg-tertiary/60 text-text-primary hover:bg-bg-tertiary border border-accent/40"
+                        : "bg-bg-tertiary/30 text-text-muted cursor-not-allowed border border-border"
+                      }`}
+                    title={t("input.queueAdd")}
+                  >
+                    <ListPlus size={14} />
+                  </button>
+                  <button
+                    onClick={onStop}
+                    className="flex items-center justify-center w-8 h-8 rounded-lg
+                               bg-error/15 text-error hover:bg-error/25 transition-colors"
+                    title={t("input.stop")}
+                  >
+                    <Square size={14} />
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={handleSend}

@@ -437,6 +437,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
     sessions,
     messages,
     streamingSessions,
+    messageQueue,
     streamError,
     streamStartTimes,
     pendingInteraction,
@@ -451,6 +452,12 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
     clearPendingInteraction,
     clearClaudeSession,
     clearMessages,
+    enqueueMessage,
+    removeQueuedMessage,
+    popQueuedMessage,
+    clearMessageQueue,
+    inputDrafts,
+    saveInputDraft,
   } = useChatStore();
 
   const { settings } = useSettingsStore();
@@ -610,7 +617,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
     return () => { unlisten.then((fn) => fn()); };
   }, [handleStreamData, handleStreamDone, markAllCompleted]);
 
-  const handleSend = useCallback(
+  const doSend = useCallback(
     async (content: string, attachments?: Attachment[]) => {
       if (!currentSessionId || !currentSession) return;
 
@@ -692,13 +699,64 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
     [currentSessionId, currentSession, settings, addUserMessage, addSystemMessage, addLaunchMessage, setStreaming, clearError, handleStreamDone]
   );
 
+  /** Public send handler from InputArea — enqueues if a task is running, otherwise sends now. */
+  const handleSend = useCallback(
+    (content: string, attachments?: Attachment[]) => {
+      if (!currentSessionId) return;
+      if (isStreaming) {
+        enqueueMessage(
+          currentSessionId,
+          content,
+          attachments?.map((a) => ({
+            name: a.name,
+            type: a.type,
+            path: a.path,
+            dataUrl: a.dataUrl,
+            size: a.size,
+          }))
+        );
+      } else {
+        doSend(content, attachments);
+      }
+    },
+    [currentSessionId, isStreaming, enqueueMessage, doSend]
+  );
+
+  // Auto-pop queue when current task finishes.
+  const prevStreamingRef = useRef(false);
+  const prevSessionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const sessionChanged = prevSessionRef.current !== currentSessionId;
+    const wasStreaming = sessionChanged ? false : prevStreamingRef.current;
+    prevSessionRef.current = currentSessionId;
+    prevStreamingRef.current = isStreaming;
+
+    if (!currentSessionId || sessionChanged) return;
+    if (wasStreaming && !isStreaming) {
+      const queue = useChatStore.getState().messageQueue[currentSessionId] || [];
+      if (queue.length === 0) return;
+      const item = popQueuedMessage(currentSessionId);
+      if (item) {
+        const atts = item.attachments?.map((a) => ({
+          name: a.name,
+          type: a.type,
+          path: a.path,
+          dataUrl: a.dataUrl,
+          size: a.size,
+        }));
+        doSend(item.content, atts);
+      }
+    }
+  }, [isStreaming, currentSessionId, popQueuedMessage, doSend]);
+
   const handleStop = useCallback(async () => {
     if (currentSessionId) {
       try { await stopSession(currentSessionId); } catch { /* ignore */ }
-      handleStreamDone(currentSessionId);
+      handleStreamDone(currentSessionId, undefined, true);
       addSystemMessage(currentSessionId, "__stopped__");
+      clearMessageQueue(currentSessionId);
     }
-  }, [currentSessionId, addSystemMessage, handleStreamDone]);
+  }, [currentSessionId, addSystemMessage, handleStreamDone, clearMessageQueue]);
 
   const handleModelChange = useCallback(
     (model: string) => {
@@ -1108,6 +1166,20 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
             contextTokens={contextTokens ?? undefined}
             contextWindow={sdkContextWindow}
             streamStartTime={streamStartTime}
+            queue={currentSessionId ? messageQueue[currentSessionId] || [] : []}
+            onRemoveQueued={(id) => {
+              if (currentSessionId) removeQueuedMessage(currentSessionId, id);
+            }}
+            sessionKey={currentSessionId}
+            initialDraft={
+              currentSessionId && inputDrafts[currentSessionId]
+                ? {
+                    content: inputDrafts[currentSessionId].content,
+                    attachments: inputDrafts[currentSessionId].attachments,
+                  }
+                : { content: "", attachments: [] }
+            }
+            onPersistDraft={(sid, d) => saveInputDraft(sid, d)}
           />
         </div>
 

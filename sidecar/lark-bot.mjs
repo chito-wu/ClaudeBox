@@ -254,6 +254,37 @@ function formatTaskList() {
 
 // ── Lark Notification Cards ─────────────────────────────────────────
 
+/**
+ * Adapt standard GFM Markdown to what Lark's `markdown` card element
+ * reliably renders across desktop / mobile / web clients.
+ *
+ * - GFM tables → fenced code block (preserves column alignment in mono font)
+ * - Task lists (`- [x]` / `- [ ]`) → emoji bullets
+ *
+ * Other GFM syntax (headings, bold, italic, links, code blocks, lists,
+ * blockquotes, hr) is supported natively by Lark and left untouched.
+ */
+function adaptMarkdownForLark(content) {
+  if (!content) return content;
+  let out = content;
+  // 1. Tables — wrap consecutive `| ... |` lines in a fenced block.
+  //    Skip lines that are inside an existing fenced block by alternating
+  //    state via a simple split.
+  const segments = out.split(/(```[\s\S]*?```)/);
+  for (let i = 0; i < segments.length; i++) {
+    if (i % 2 === 1) continue; // odd indices are inside fences — leave alone
+    segments[i] = segments[i].replace(
+      /(?:^\|[^\n]*\|[^\n]*\n?)+/gm,
+      (table) => "```\n" + table.trimEnd() + "\n```\n"
+    );
+  }
+  out = segments.join("");
+  // 2. Task list checkboxes — emoji fallbacks
+  out = out.replace(/^(\s*)[-*] \[x\] /gim, "$1✅ ");
+  out = out.replace(/^(\s*)[-*] \[ \] /gm, "$1☐ ");
+  return out;
+}
+
 function buildNotificationCard(title, content, cardType) {
   const colorMap = {
     start: "green",
@@ -275,11 +306,8 @@ function buildNotificationCard(title, content, cardType) {
     },
     elements: [
       {
-        tag: "div",
-        text: {
-          tag: "lark_md",
-          content,
-        },
+        tag: "markdown",
+        content: adaptMarkdownForLark(content),
       },
       {
         tag: "note",

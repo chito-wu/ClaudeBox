@@ -568,7 +568,7 @@ pub struct ProcessManager {
     /// frontend session id -> child PID (for stopping)
     running_pids: Arc<Mutex<HashMap<String, u32>>>,
     /// frontend session id -> child stdin handle (for sending responses)
-    stdin_handles: Arc<Mutex<HashMap<String, ChildStdin>>>,
+    stdin_handles: Arc<Mutex<HashMap<String, (u32, ChildStdin)>>>,
 }
 
 impl ProcessManager {
@@ -1021,7 +1021,7 @@ pub async fn send_message(
     }
     {
         let mut handles = state.stdin_handles.lock().map_err(|e| e.to_string())?;
-        handles.insert(session_id.clone(), stdin);
+        handles.insert(session_id.clone(), (pid, stdin));
     }
 
     let stdout = child.stdout.take().ok_or("No stdout")?;
@@ -1085,12 +1085,19 @@ pub async fn send_message(
             stream: "stdout".to_string(),
         });
 
-        // Clean up PID and stdin handle
+        // Clean up — but only if this session's HashMap entry still points to
+        // us. A freshly-spawned successor (e.g. when the message queue
+        // auto-dispatches the next prompt) may have already inserted its own
+        // pid + stdin under the same session_id; we must not clobber it.
         if let Ok(mut pids) = pids_arc.lock() {
-            pids.remove(&sid_out);
+            if pids.get(&sid_out).copied() == Some(pid) {
+                pids.remove(&sid_out);
+            }
         }
         if let Ok(mut handles) = stdin_arc.lock() {
-            handles.remove(&sid_out);
+            if handles.get(&sid_out).map(|(p, _)| *p) == Some(pid) {
+                handles.remove(&sid_out);
+            }
         }
     });
 
@@ -1132,7 +1139,7 @@ pub fn send_response(
     response: String,
 ) -> Result<(), String> {
     let mut handles = state.stdin_handles.lock().map_err(|e| e.to_string())?;
-    if let Some(stdin) = handles.get_mut(&session_id) {
+    if let Some((_, stdin)) = handles.get_mut(&session_id) {
         let line = format!("{}\n", response.trim());
         emit_debug(&app, &session_id, "stdin", &line.trim().to_string());
         stdin.write_all(line.as_bytes()).map_err(|e| {
@@ -1155,7 +1162,7 @@ pub fn stop_session(
     // Send abort message through stdin first for clean shutdown
     {
         let mut handles = state.stdin_handles.lock().map_err(|e| e.to_string())?;
-        if let Some(stdin) = handles.get_mut(&session_id) {
+        if let Some((_, stdin)) = handles.get_mut(&session_id) {
             let abort_msg = "{\"type\":\"abort\"}\n";
             let _ = stdin.write_all(abort_msg.as_bytes());
             let _ = stdin.flush();
