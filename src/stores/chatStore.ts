@@ -35,6 +35,10 @@ export interface Session {
   updatedAt: number;
   /** Real Claude session ID (from system init message) — used for --resume across app restarts */
   claudeSessionId?: string;
+  /** Background completion not yet seen by user (cleared on switchSession) */
+  unread?: boolean;
+  /** Pinned to the top section (manual order, immune from auto-bump) */
+  pinned?: boolean;
 }
 
 export const DEFAULT_TOOLS = ["Read", "Glob", "Grep", "TodoWrite", "Write", "Edit", "Bash", "WebFetch", "WebSearch", "NotebookEdit", "Agent", "MCP"];
@@ -85,6 +89,16 @@ interface ChatState {
   clearPendingInteraction: () => void;
   /** Mark an interactive tool as answered, persisting data across re-renders */
   setToolAnswered: (toolUseId: string, data: AnsweredToolData) => void;
+  /** Reorder sessions inside the pinned section. Indices refer to positions among pinned sessions. */
+  reorderPinned: (fromIndex: number, toIndex: number) => void;
+  /** Toggle a session's pinned state. */
+  togglePinned: (id: string) => void;
+  /** Refresh updatedAt for a session (used on user activity; recent section is sorted by updatedAt). */
+  bumpSessionToTop: (id: string) => void;
+  /** Mark a session as unread (background completion). */
+  markUnread: (id: string) => void;
+  /** Clear unread flag (when user opens / switches to the session). */
+  clearUnread: (id: string) => void;
 }
 
 // ── File storage keys ───────────────────────────────────────────────
@@ -380,6 +394,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     }
     set({ currentSessionId: id, streamError: null });
+    get().clearUnread(id);
   },
 
   updateSession: (id, updates) => {
@@ -419,6 +434,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: { ...get().messages, [sessionId]: msgs },
       streamStartTimes: { ...get().streamStartTimes, [sessionId]: Date.now() },
     });
+    get().bumpSessionToTop(sessionId);
   },
 
   addSystemMessage: (sessionId, text) => {
@@ -676,6 +692,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           streamingSessions: { ...get().streamingSessions, [sessionId]: false },
           pendingInteraction: get().pendingInteraction?.sessionId === sessionId ? null : get().pendingInteraction,
         });
+        if (get().currentSessionId !== sessionId) {
+          get().markUnread(sessionId);
+        }
       } else if (event.type === "ask_user" && event.requestId) {
         notify("ClaudeBox", "Claude needs your input");
         set({
@@ -756,6 +775,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       streamingSessions: { ...get().streamingSessions, [sessionId]: false },
       streamError: error || null,
     });
+    if (!error && get().currentSessionId !== sessionId) {
+      get().markUnread(sessionId);
+    }
   },
 
   setStreaming: (sessionId, streaming) => set({
@@ -767,5 +789,81 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const answeredTools = { ...get().answeredTools, [toolUseId]: data };
     set({ answeredTools });
     saveAnsweredTools(answeredTools);
+  },
+
+  reorderPinned: (fromIndex, toIndex) => {
+    const sessions = [...get().sessions];
+    const pinnedSessions = sessions.filter((s) => s.pinned);
+    if (
+      fromIndex < 0 ||
+      fromIndex >= pinnedSessions.length ||
+      toIndex < 0 ||
+      toIndex >= pinnedSessions.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+    const moved = pinnedSessions[fromIndex];
+    const target = pinnedSessions[toIndex];
+    const fromGlobal = sessions.indexOf(moved);
+    const toGlobal = sessions.indexOf(target);
+    sessions.splice(fromGlobal, 1);
+    const adjustedTo = fromGlobal < toGlobal ? toGlobal - 1 : toGlobal;
+    sessions.splice(adjustedTo, 0, moved);
+    saveSessions(sessions);
+    set({ sessions });
+  },
+
+  togglePinned: (id) => {
+    const sessions = get().sessions;
+    const idx = sessions.findIndex((s) => s.id === id);
+    if (idx === -1) return;
+    const target = sessions[idx];
+    const nextPinned = !target.pinned;
+    if (nextPinned) {
+      // Place at end of pinned section (= just before first non-pinned)
+      const without = sessions.filter((s) => s.id !== id);
+      const insertAt = without.findIndex((s) => !s.pinned);
+      const updated = { ...target, pinned: true };
+      const next = [...without];
+      if (insertAt === -1) next.push(updated);
+      else next.splice(insertAt, 0, updated);
+      saveSessions(next);
+      set({ sessions: next });
+    } else {
+      // Just flip the flag; recent section is sorted by updatedAt at render time
+      const next = sessions.map((s) =>
+        s.id === id ? { ...s, pinned: false } : s
+      );
+      saveSessions(next);
+      set({ sessions: next });
+    }
+  },
+
+  bumpSessionToTop: (id) => {
+    // Only refresh updatedAt; SessionList renders pinned section first (manual order)
+    // followed by non-pinned sorted by updatedAt desc, so the timestamp is what matters.
+    const sessions = get().sessions.map((s) =>
+      s.id === id ? { ...s, updatedAt: Date.now() } : s
+    );
+    saveSessions(sessions);
+    set({ sessions });
+  },
+
+  markUnread: (id) => {
+    const sessions = get().sessions.map((s) =>
+      s.id === id ? { ...s, unread: true } : s
+    );
+    saveSessions(sessions);
+    set({ sessions });
+  },
+
+  clearUnread: (id) => {
+    const sessions = get().sessions;
+    const target = sessions.find((s) => s.id === id);
+    if (!target?.unread) return;
+    const next = sessions.map((s) => (s.id === id ? { ...s, unread: false } : s));
+    saveSessions(next);
+    set({ sessions: next });
   },
 }));

@@ -5,6 +5,8 @@ type TranslationDict = Record<string, string>;
 const en: TranslationDict = {
   // Sidebar
   "sidebar.openProject": "Open Project",
+  "sidebar.searchPlaceholder": "Search sessions...",
+  "sidebar.clearSearch": "Clear search",
   "sidebar.expandSidebar": "Expand sidebar",
   "sidebar.collapseSidebar": "Collapse sidebar",
   "sidebar.lightMode": "Switch to light mode",
@@ -15,6 +17,13 @@ const en: TranslationDict = {
   "session.empty": "No sessions yet.",
   "session.emptyHint": "Open a project to start!",
   "session.delete": "Delete session",
+  "session.noMatch": "No matching sessions",
+  "session.unread": "Has new completion",
+  "session.pin": "Pin to top",
+  "session.unpin": "Unpin",
+  "session.pinnedTag": "Pinned",
+  "session.section.pinned": "Pinned",
+  "session.section.recent": "Recent",
   "session.openFolder": "Open in Finder",
 
   // ChatPanel — welcome
@@ -351,6 +360,8 @@ const en: TranslationDict = {
 const zh: TranslationDict = {
   // Sidebar
   "sidebar.openProject": "打开项目",
+  "sidebar.searchPlaceholder": "搜索会话...",
+  "sidebar.clearSearch": "清空搜索",
   "sidebar.expandSidebar": "展开侧边栏",
   "sidebar.collapseSidebar": "收起侧边栏",
   "sidebar.lightMode": "切换到浅色模式",
@@ -361,6 +372,13 @@ const zh: TranslationDict = {
   "session.empty": "暂无会话",
   "session.emptyHint": "打开一个项目开始吧！",
   "session.delete": "删除会话",
+  "session.noMatch": "未找到匹配的会话",
+  "session.unread": "有新的完成消息",
+  "session.pin": "置顶",
+  "session.unpin": "取消置顶",
+  "session.pinnedTag": "已置顶",
+  "session.section.pinned": "置顶",
+  "session.section.recent": "最近会话",
   "session.openFolder": "打开文件夹",
 
   // ChatPanel — welcome

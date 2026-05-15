@@ -3,7 +3,6 @@ import {
   Settings,
   PanelLeftClose,
   PanelLeft,
-  FolderOpen,
   Sun,
   Moon,
   Languages,
@@ -15,6 +14,9 @@ import {
   Send,
   History,
   ExternalLink,
+  Search,
+  Plus,
+  X,
 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -52,6 +54,7 @@ export default function Sidebar({
   const [appVersion, setAppVersion] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const [larkConnecting, setLarkConnecting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
   const popoverRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const larkPopoverRef = useRef<HTMLDivElement>(null);
@@ -506,9 +509,6 @@ export default function Sidebar({
         onDoubleClick={handleTitleBarDoubleClick}
         className={`flex items-center ${isWindows ? "pl-4" : "pl-[78px]"} pr-3 h-14 flex-shrink-0`}
       >
-        <h1 data-tauri-drag-region className="text-sm font-bold text-text-primary tracking-wide pointer-events-none mt-2">
-          ClaudeBox
-        </h1>
         {/* Drag spacer — fills remaining space for window dragging */}
         <div className="flex-1" data-tauri-drag-region />
         <button
@@ -520,36 +520,54 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Open Project */}
-      <div className="px-2.5 py-2">
+      {/* Search + Open Project */}
+      <div className="px-2.5 py-2 flex items-center gap-2">
+        <div className="flex-1 relative">
+          <Search
+            size={15}
+            strokeWidth={2.5}
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 z-10 text-text-primary/60 pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t("sidebar.searchPlaceholder")}
+            className="w-full h-9 pl-8 pr-7 rounded-xl
+                       bg-bg-tertiary/25 backdrop-blur-sm
+                       border border-border
+                       text-sm text-text-primary placeholder:text-text-muted
+                       focus:outline-none focus:border-accent/40
+                       hover:border-accent/30
+                       transition-colors"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 p-0.5 rounded text-text-muted hover:text-text-primary"
+              title={t("sidebar.clearSearch")}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
         <button
           onClick={handleOpenProject}
-          className="group flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl
+          title={t("sidebar.openProject")}
+          className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-xl
                      bg-bg-tertiary/25 backdrop-blur-sm
                      border border-border
-                     text-text-secondary hover:text-text-primary
+                     text-text-secondary hover:text-accent
                      hover:bg-bg-tertiary/50 hover:border-accent/30
-                     hover:shadow-lg hover:shadow-accent/5
-                     active:scale-[0.98]
-                     transition-all duration-200
-                     text-sm font-medium"
+                     active:scale-[0.96]
+                     transition-all duration-150"
         >
-          <div
-            className="flex items-center justify-center w-6 h-6 rounded-lg
-                          bg-accent/10 group-hover:bg-accent/15
-                          transition-colors duration-200"
-          >
-            <FolderOpen
-              size={14}
-              className="text-accent/80 group-hover:text-accent transition-colors"
-            />
-          </div>
-          <span>{t("sidebar.openProject")}</span>
+          <Plus size={16} />
         </button>
       </div>
 
       {/* Session list */}
-      <SessionList />
+      <SessionList searchQuery={searchQuery} />
 
       {/* Footer */}
       <div className="relative border-t border-border px-2 py-2 flex items-center justify-center gap-1">
