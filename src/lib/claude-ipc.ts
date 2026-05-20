@@ -197,6 +197,18 @@ export async function gitDiff(cwd: string): Promise<string> {
   return invoke("git_diff", { cwd });
 }
 
+export interface GitDiffStat {
+  added: number;
+  removed: number;
+  files: number;
+}
+
+/** Aggregate diff line counts (staged + unstaged) for a directory */
+export async function gitDiffStat(cwd: string): Promise<GitDiffStat> {
+  const [added, removed, files] = await invoke<[number, number, number]>("git_diff_stat", { cwd });
+  return { added, removed, files };
+}
+
 /** Open a directory in the system terminal */
 export async function openInTerminal(path: string): Promise<void> {
   return invoke("open_in_terminal", { path });

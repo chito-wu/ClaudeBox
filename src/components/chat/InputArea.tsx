@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
-  Send, Square, AlertCircle, ChevronDown, ChevronUp, GitBranch,
+  Send, Square, AlertCircle, ChevronDown, ChevronUp,
   Wrench, Check, Plus, X, FileCode2, FileText,
   Image, FileType, Terminal, Globe, Settings2, Cpu, Eraser,
   Loader2, SquareTerminal, Zap, Search, RefreshCw,
   Presentation, FileSpreadsheet, ListPlus,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readImageBase64, saveClipboardImage, listGitBranches, checkoutGitBranch, gitDiffFiles, getFileSize } from "../../lib/claude-ipc";
+import { readImageBase64, saveClipboardImage, getFileSize } from "../../lib/claude-ipc";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { useT } from "../../lib/i18n";
 import { parseSkills } from "../../lib/skills";
@@ -110,9 +110,7 @@ interface InputAreaProps {
   model?: string;
   models?: string[];
   onModelChange?: (model: string) => void;
-  gitBranch?: string | null;
   projectPath?: string;
-  onBranchChange?: (branch: string) => void;
   onOpenTerminal?: () => void;
   allowedTools?: string[];
   onAllowedToolsChange?: (tools: string[]) => void;
@@ -136,6 +134,9 @@ interface InputAreaProps {
   initialDraft?: { content: string; attachments: Attachment[] };
   /** Persist the current draft for a session (called on session switch and on send-clear) */
   onPersistDraft?: (sessionId: string, draft: { content: string; attachments: Attachment[] }) => void;
+  /** External signal to overwrite the textarea (e.g. "re-input" from a past user bubble).
+   *  Bumping the nonce triggers a load + focus regardless of whether content is identical. */
+  injectedDraft?: { content: string; nonce: number } | null;
 }
 
 const USER_TOOLS = [
@@ -229,165 +230,6 @@ function ToolsSelector({
               </button>
             );
           })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Branch dropdown for inline toolbar */
-function BranchDropdown({
-  branch,
-  projectPath,
-  onBranchChange,
-  isStreaming,
-  onStop,
-}: {
-  branch: string;
-  projectPath: string;
-  onBranchChange: (branch: string) => void;
-  isStreaming: boolean;
-  onStop: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [switching, setSwitching] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pendingBranch, setPendingBranch] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-  const t = useT();
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const handleOpen = useCallback(async () => {
-    if (open) {
-      setOpen(false);
-      return;
-    }
-    setError(null);
-    try {
-      const list = await listGitBranches(projectPath);
-      const sorted = [branch, ...list.filter((b) => b !== branch)];
-      setBranches(sorted);
-    } catch {
-      setBranches([branch]);
-    }
-    setOpen(true);
-  }, [open, projectPath, branch]);
-
-  const doCheckout = useCallback(async (target: string) => {
-    setSwitching(true);
-    setError(null);
-    try {
-      await checkoutGitBranch(projectPath, target);
-      onBranchChange(target);
-      setOpen(false);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setSwitching(false);
-      setPendingBranch(null);
-    }
-  }, [projectPath, onBranchChange]);
-
-  const handleSwitch = useCallback(async (target: string) => {
-    if (target === branch) {
-      setOpen(false);
-      return;
-    }
-    setError(null);
-    try {
-      const dirty = await gitDiffFiles(projectPath);
-      if (dirty.length > 0) {
-        setError(t("branch.dirtyWorktree"));
-        return;
-      }
-    } catch { /* ignore check failure */ }
-    if (isStreaming) {
-      setPendingBranch(target);
-      return;
-    }
-    doCheckout(target);
-  }, [branch, projectPath, isStreaming, doCheckout, t]);
-
-  const handleConfirmStop = useCallback(() => {
-    if (!pendingBranch) return;
-    onStop();
-    doCheckout(pendingBranch);
-  }, [pendingBranch, onStop, doCheckout]);
-
-  const handleCancelPending = useCallback(() => {
-    setPendingBranch(null);
-  }, []);
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={handleOpen}
-        disabled={switching}
-        className="flex items-center gap-1 px-2 py-1 rounded-md text-xs
-                   text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50
-                   transition-colors cursor-pointer"
-        title={t("branch.switch")}
-      >
-        {switching ? (
-          <Loader2 size={11} className="flex-shrink-0 animate-spin" />
-        ) : (
-          <GitBranch size={11} className="flex-shrink-0" />
-        )}
-        <span className="truncate max-w-[100px]">{branch}</span>
-        <ChevronDown size={10} className="flex-shrink-0 opacity-50" />
-      </button>
-      {pendingBranch && (
-        <div className="absolute bottom-full left-0 mb-1 min-w-[200px] rounded-lg bg-bg-secondary border border-border shadow-xl z-50 p-3">
-          <p className="text-xs text-text-secondary mb-2">{t("branch.stopFirst")}</p>
-          <div className="flex gap-2">
-            <button
-              onClick={handleConfirmStop}
-              className="px-2 py-1 rounded text-xs bg-accent text-white hover:bg-accent/80 transition-colors"
-            >
-              {t("branch.stopAndSwitch")}
-            </button>
-            <button
-              onClick={handleCancelPending}
-              className="px-2 py-1 rounded text-xs text-text-secondary hover:bg-bg-tertiary/50 transition-colors"
-            >
-              {t("chat.newSession.cancel")}
-            </button>
-          </div>
-        </div>
-      )}
-      {open && !pendingBranch && (
-        <div className="absolute bottom-full left-0 mb-1 min-w-[160px] max-w-[260px] max-h-[240px]
-                        overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-xl z-50 py-1">
-          <div className="px-3 py-1.5 text-[10px] text-text-muted font-medium uppercase tracking-wider border-b border-border">
-            {t("branch.localBranches")}
-          </div>
-          {error && (
-            <p className="px-3 py-1.5 text-[10px] text-error border-b border-border">{error}</p>
-          )}
-          {branches.map((b) => (
-            <button
-              key={b}
-              onClick={() => handleSwitch(b)}
-              className={`flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs transition-colors truncate
-                ${b === branch
-                  ? "text-accent bg-accent/10"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
-                }`}
-            >
-              {b === branch && <Check size={10} className="flex-shrink-0" />}
-              <span className="truncate">{b}</span>
-            </button>
-          ))}
         </div>
       )}
     </div>
@@ -863,9 +705,7 @@ export default function InputArea({
   model = "",
   models = [],
   onModelChange,
-  gitBranch,
   projectPath,
-  onBranchChange,
   onOpenTerminal,
   allowedTools = [],
   onAllowedToolsChange,
@@ -878,6 +718,7 @@ export default function InputArea({
   sessionKey,
   initialDraft,
   onPersistDraft,
+  injectedDraft,
 }: InputAreaProps) {
   const [input, setInput] = useState(initialDraft?.content ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>(initialDraft?.attachments ?? []);
@@ -1095,14 +936,29 @@ export default function InputArea({
     textareaRef.current?.focus();
   }, []);
 
+  // External "re-input" — bumping nonce overwrites whatever's in the textarea.
+  const lastInjectedNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!injectedDraft) return;
+    if (lastInjectedNonce.current === injectedDraft.nonce) return;
+    lastInjectedNonce.current = injectedDraft.nonce;
+    setInput(injectedDraft.content);
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      ta.setSelectionRange(ta.value.length, ta.value.length);
+    });
+  }, [injectedDraft]);
+
   const hasContent = input.trim();
 
   return (
     <div className="px-4 pt-1 pb-4">
       <div className="max-w-3xl mx-auto">
         {/* Unified input container */}
-        <div className={`rounded-2xl border transition-colors overflow-visible
-          ${disabled ? "opacity-50 border-border bg-input-bg" : "border-border bg-input-bg focus-within:border-accent/60 focus-within:ring-1 focus-within:ring-accent/20"}`}
+        <div className={`input-glow rounded-2xl border overflow-visible
+          ${disabled ? "opacity-50 border-border bg-input-bg" : "border-border bg-input-bg focus-within:border-accent/40"}`}
         >
           {/* Pending queue */}
           {queue.length > 0 && (
@@ -1243,18 +1099,6 @@ export default function InputArea({
                       selected={allowedTools}
                       onChange={onAllowedToolsChange}
                       t={t}
-                    />
-                  </>
-                )}
-                {gitBranch && projectPath && onBranchChange && (
-                  <>
-                    <span className="text-border/40 flex-shrink-0">|</span>
-                    <BranchDropdown
-                      branch={gitBranch}
-                      projectPath={projectPath}
-                      onBranchChange={onBranchChange}
-                      isStreaming={isStreaming}
-                      onStop={onStop}
                     />
                   </>
                 )}

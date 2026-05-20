@@ -7,7 +7,7 @@ import ToolCallCard, { shortPath } from "./ToolCallCard";
 import GeneratedImagesGallery, { getGeneratedImagePaths } from "./GeneratedImagesGallery";
 import { formatTimeWithSeconds, formatDuration, formatFileSize } from "../../lib/utils";
 import { useT, type TFunction } from "../../lib/i18n";
-import { User, Loader2, Brain, ChevronDown, ChevronRight, Info, Image, Rocket, Sparkles, Layers, CheckCircle, CircleStop, Clock, Timer, Hash, DollarSign, RefreshCw, Share2, Copy, ImageIcon, Check, MessageSquare } from "lucide-react";
+import { User, Loader2, Brain, ChevronDown, ChevronUp, ChevronRight, Info, Image, Rocket, Sparkles, Layers, CheckCircle, CircleStop, Clock, Timer, Hash, DollarSign, RefreshCw, Share2, Copy, ImageIcon, Check, MessageSquare, Edit3 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import QRCode from "qrcode";
 import logoUrl from "../../assets/app-icon.png";
@@ -407,6 +407,8 @@ interface MessageBubbleProps {
   pendingInteraction?: PendingInteraction | null;
   /** Callback when user responds to an interactive tool */
   onRespond?: (response: Record<string, unknown>) => void;
+  /** Callback when user clicks "re-input" on a past user bubble */
+  onResendToInput?: (text: string) => void;
   skipAgentBlockId?: string;
 }
 
@@ -421,6 +423,7 @@ export default function MessageBubble({
   streamStartTime,
   pendingInteraction,
   onRespond,
+  onResendToInput,
   skipAgentBlockId,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -431,6 +434,7 @@ export default function MessageBubble({
   const [shareOpen, setShareOpen] = useState(false);
   const [shareFeedback, setShareFeedback] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [userTextCollapsed, setUserTextCollapsed] = useState(true);
 
   useEffect(() => {
     if (!shareOpen) return;
@@ -1002,6 +1006,10 @@ export default function MessageBubble({
     const hasText = message.content.some((b) => b.type === "text" && b.text);
     if (!hasText) return null;
 
+    const userText = message.content[0]?.text || "";
+    const lineCount = userText.split("\n").length;
+    const shouldCollapse = lineCount > 10;
+
     const imageAtts = message.attachments?.filter((a) => a.type === "image") || [];
     const textAtts = message.attachments?.filter((a) => a.type !== "image") || [];
     const openFile = (path?: string) => {
@@ -1097,10 +1105,36 @@ export default function MessageBubble({
             )}
             {/* Message text */}
             <div className="rounded-2xl rounded-tr-sm px-4 py-2.5 bg-user-bubble text-text-primary min-w-0 max-w-full">
-              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-[0.9375rem] leading-relaxed">
-                {message.content[0]?.text || ""}
+              <p className={`whitespace-pre-wrap break-words [overflow-wrap:anywhere] text-[0.9375rem] leading-relaxed
+                ${shouldCollapse && userTextCollapsed
+                  ? "[display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:10] overflow-hidden"
+                  : ""}`}>
+                {userText}
               </p>
             </div>
+            {/* Bottom controls: expand/collapse + re-input */}
+            {(shouldCollapse || onResendToInput) && (
+              <div className="flex items-center gap-3 px-1 text-[11px] text-text-muted/70">
+                {shouldCollapse && (
+                  <button
+                    onClick={() => setUserTextCollapsed(!userTextCollapsed)}
+                    className="flex items-center gap-1 hover:text-accent transition-colors"
+                  >
+                    {userTextCollapsed ? <ChevronDown size={11} /> : <ChevronUp size={11} />}
+                    <span>{userTextCollapsed ? t("message.expand") : t("message.collapse")}</span>
+                  </button>
+                )}
+                {onResendToInput && (
+                  <button
+                    onClick={() => onResendToInput(userText)}
+                    className="flex items-center gap-1 hover:text-accent transition-colors"
+                  >
+                    <Edit3 size={11} />
+                    <span>{t("message.reinput")}</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-blue-500/15 flex items-center justify-center mt-0.5">
             <User size={14} className="text-blue-400" />

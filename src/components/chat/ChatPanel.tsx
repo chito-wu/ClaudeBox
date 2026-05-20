@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useCallback, useState, useMemo, memo, useLayo
 import { useChatStore } from "../../stores/chatStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useTaskStore } from "../../stores/taskStore";
-import { sendMessage, stopSession, onStream, getGitBranch, listGitBranches, checkoutGitBranch, sendResponse, clearSessionResume, openInTerminal, gitDiffFiles, getContextTokens } from "../../lib/claude-ipc";
+import { sendMessage, stopSession, onStream, getGitBranch, listGitBranches, checkoutGitBranch, sendResponse, clearSessionResume, openInTerminal, gitDiffFiles, gitDiffStat, getContextTokens } from "../../lib/claude-ipc";
 import { larkSendCommand } from "../../lib/lark-ipc";
 import { useLarkStore } from "../../stores/larkStore";
 import { resolveModelCreds } from "../../lib/providers";
@@ -313,22 +313,30 @@ function ToolPermissionCard({
   );
 }
 
-/** Branch dropdown switcher */
-function BranchSwitcher({
+/** Combined branch switcher + aggregate diff stats badge.
+ *  Left half opens the branch dropdown; right half (when there are uncommitted changes)
+ *  opens the global GitDiffDialog. The two sit inside a single rounded-full pill. */
+function BranchDiffBadge({
   branch,
   projectPath,
+  sessionId,
+  isStreaming,
   onBranchChange,
 }: {
   branch: string;
   projectPath: string;
+  sessionId: string;
+  isStreaming: boolean;
   onBranchChange: (branch: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [branches, setBranches] = useState<string[]>([]);
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<{ added: number; removed: number; files: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const t = useT();
+  const openDiffDialog = useChatStore((s) => s.openDiffDialog);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -348,7 +356,6 @@ function BranchSwitcher({
     setError(null);
     try {
       const list = await listGitBranches(projectPath);
-      // Put current branch first
       const sorted = [branch, ...list.filter((b) => b !== branch)];
       setBranches(sorted);
     } catch {
@@ -375,24 +382,62 @@ function BranchSwitcher({
     }
   }, [branch, projectPath, onBranchChange]);
 
+  const refreshStats = useCallback(async () => {
+    try {
+      const s = await gitDiffStat(projectPath);
+      setStats(s);
+    } catch {
+      setStats(null);
+    }
+  }, [projectPath]);
+
+  useEffect(() => {
+    refreshStats();
+  }, [refreshStats, branch]);
+
+  // Refresh once streaming finishes — Claude has likely just touched files.
+  const wasStreamingRef = useRef(isStreaming);
+  useEffect(() => {
+    if (wasStreamingRef.current && !isStreaming) refreshStats();
+    wasStreamingRef.current = isStreaming;
+  }, [isStreaming, refreshStats]);
+
+  const hasDiff = !!stats && (stats.added > 0 || stats.removed > 0 || stats.files > 0);
+
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={(e) => { e.stopPropagation(); handleOpen(); }}
-        disabled={switching}
-        className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full
-                   bg-bg-tertiary text-text-muted hover:text-text-primary hover:bg-bg-tertiary/80
-                   transition-colors max-w-[180px] cursor-pointer"
-        title={t("branch.switch")}
-      >
-        {switching ? (
-          <Loader2 size={11} className="flex-shrink-0 animate-spin" />
-        ) : (
-          <GitBranch size={11} className="flex-shrink-0" />
+    <div ref={ref} className="relative flex-shrink-0">
+      <div className="flex items-stretch text-xs rounded-full bg-bg-tertiary overflow-hidden max-w-[280px]">
+        <button
+          onClick={(e) => { e.stopPropagation(); handleOpen(); }}
+          disabled={switching}
+          className="flex items-center gap-1 px-2 py-0.5 text-text-muted
+                     hover:text-text-primary hover:bg-bg-tertiary/60 transition-colors
+                     min-w-0 cursor-pointer"
+          title={t("branch.switch")}
+        >
+          {switching ? (
+            <Loader2 size={11} className="flex-shrink-0 animate-spin" />
+          ) : (
+            <GitBranch size={11} className="flex-shrink-0" />
+          )}
+          <span className="truncate">{branch}</span>
+          <ChevronDown size={10} className="flex-shrink-0 opacity-50" />
+        </button>
+        {hasDiff && (
+          <>
+            <span className="self-stretch w-px bg-border/50 flex-shrink-0" />
+            <button
+              onClick={(e) => { e.stopPropagation(); openDiffDialog(sessionId); }}
+              className="flex items-center gap-1 px-2 py-0.5 hover:bg-bg-tertiary/60
+                         transition-colors flex-shrink-0 tabular-nums cursor-pointer"
+              title={t("session.viewDiff")}
+            >
+              <span className="text-success">+{stats!.added}</span>
+              <span className="text-error">-{stats!.removed}</span>
+            </button>
+          </>
         )}
-        <span className="truncate">{branch}</span>
-        <ChevronDown size={10} className="flex-shrink-0 opacity-50" />
-      </button>
+      </div>
       {open && (
         <div className="absolute top-full right-0 mt-1 min-w-[160px] max-w-[260px] max-h-[240px]
                         overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-xl z-50 py-1">
@@ -486,7 +531,12 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
   const [changedFiles, setChangedFiles] = useState<Set<string>>(new Set());
   const [contextTokensCache, setContextTokensCache] = useState<Record<string, number>>({});
   const [fileTreeRefreshKey, setFileTreeRefreshKey] = useState(0);
+  const [injectedDraft, setInjectedDraft] = useState<{ content: string; nonce: number } | null>(null);
   const toolNameMapRef = useRef<Map<string, string>>(new Map());
+
+  const handleResendToInput = useCallback((text: string) => {
+    setInjectedDraft({ content: text, nonce: Date.now() });
+  }, []);
 
   // Derive current session's viewer state
   const currentViewerState = currentSessionId
@@ -992,10 +1042,12 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
           </button>
         )}
         <div className="flex-1 pointer-events-none" />
-        {gitBranch && currentSession?.projectPath && (
-          <BranchSwitcher
+        {gitBranch && currentSession?.projectPath && currentSessionId && (
+          <BranchDiffBadge
             branch={gitBranch}
             projectPath={currentSession.projectPath}
+            sessionId={currentSessionId}
+            isStreaming={isStreaming}
             onBranchChange={setGitBranch}
           />
         )}
@@ -1108,6 +1160,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
                         streamStartTime={streamStartTime}
                         pendingInteraction={isLastAssistant ? pendingInteraction : undefined}
                         onRespond={isLastAssistant ? handleRespond : undefined}
+                        onResendToInput={msg.role === "user" ? handleResendToInput : undefined}
                         skipAgentBlockId={agentRun?.agentBlock.id}
                       />
                       {agentRun && (
@@ -1155,9 +1208,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
             model={currentSession?.model || ""}
             models={settings.models.map((m) => m.id)}
             onModelChange={handleModelChange}
-            gitBranch={gitBranch}
             projectPath={currentSession?.projectPath}
-            onBranchChange={setGitBranch}
             onOpenTerminal={handleOpenTerminal}
             allowedTools={currentSession?.allowedTools || []}
             onAllowedToolsChange={handleAllowedToolsChange}
@@ -1180,6 +1231,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
                 : { content: "", attachments: [] }
             }
             onPersistDraft={(sid, d) => saveInputDraft(sid, d)}
+            injectedDraft={injectedDraft}
           />
         </div>
 
