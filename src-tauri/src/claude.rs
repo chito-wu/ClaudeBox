@@ -1446,6 +1446,50 @@ pub fn git_diff(cwd: String) -> Result<String, String> {
     Ok(result)
 }
 
+/// Aggregate diff line counts (staged + unstaged) for a directory.
+/// Returns (added, removed, files). Unreadable / non-repo directories return zeros.
+#[tauri::command]
+pub fn git_diff_stat(cwd: String) -> Result<(usize, usize, usize), String> {
+    fn run(args: &[&str], cwd: &str) -> Vec<String> {
+        let output = command_with_path("git")
+            .args(args)
+            .current_dir(cwd)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output();
+        match output {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .map(|l| l.to_string())
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+    // `--numstat` prints "added\tremoved\tpath" per file. Binary files print "-\t-\t...".
+    let mut files = std::collections::HashSet::new();
+    let mut added = 0usize;
+    let mut removed = 0usize;
+    for line in run(&["diff", "--numstat"], &cwd)
+        .into_iter()
+        .chain(run(&["diff", "--cached", "--numstat"], &cwd))
+    {
+        let mut parts = line.splitn(3, '\t');
+        let a = parts.next().unwrap_or("0");
+        let r = parts.next().unwrap_or("0");
+        let path = parts.next().unwrap_or("").to_string();
+        if !path.is_empty() {
+            files.insert(path);
+        }
+        if let Ok(n) = a.parse::<usize>() {
+            added += n;
+        }
+        if let Ok(n) = r.parse::<usize>() {
+            removed += n;
+        }
+    }
+    Ok((added, removed, files.len()))
+}
+
 
 #[tauri::command]
 pub async fn preload_skills(

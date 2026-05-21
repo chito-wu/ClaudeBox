@@ -54,6 +54,7 @@ pub fn run() {
             claude::reveal_in_finder,
             claude::git_diff_files,
             claude::git_diff,
+            claude::git_diff_stat,
             claude::list_dir,
             claude::read_file,
             claude::write_file,

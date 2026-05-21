@@ -401,7 +401,7 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
                           style={{ paddingLeft: padLeft, paddingRight: 10 }}
                         >
                           <FileCode2 size={11} className={`flex-shrink-0 ${isActive ? "text-accent" : "text-text-muted"}`} />
-                          <span className={`text-[12px] truncate flex-1 ${
+                          <span className={`text-[12px] truncate min-w-0 flex-1 ${
                             isActive ? "text-text-primary" : "text-text-secondary"
                           }`}>
                             {node.name}
@@ -427,7 +427,7 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
                         ) : (
                           <ChevronRight size={11} className="text-text-muted flex-shrink-0" />
                         )}
-                        <span className="text-[12px] truncate flex-1 text-text-secondary font-mono">
+                        <span className="text-[12px] truncate min-w-0 flex-1 text-text-secondary font-mono">
                           {node.name}
                         </span>
                         <span className="text-[10px] text-success/80 tabular-nums flex-shrink-0">+{node.added}</span>
@@ -490,7 +490,7 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
                         ) : (
                           <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
                         )}
-                        <span className="font-mono text-[13px] text-text-primary truncate flex-1">
+                        <span className="font-mono text-[13px] text-text-primary truncate min-w-0 flex-1">
                           {block.path}
                         </span>
                         <span className="flex-shrink-0 text-xs text-success">

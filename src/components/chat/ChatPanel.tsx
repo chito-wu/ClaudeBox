@@ -17,7 +17,7 @@ import TaskBoard from "./TaskBoard";
 import FileTree from "./FileTree";
 import FileViewer from "./FileViewer";
 import NewSessionDialog from "./NewSessionDialog";
-import { Sparkles, FolderOpen, Terminal, GitBranch, PanelRightClose, PanelRight, ChevronDown, ChevronRight, Loader2, CheckCircle, Check, FileText, ShieldAlert, ShieldCheck } from "lucide-react";
+import { Sparkles, FolderOpen, Terminal, GitBranch, PanelRightClose, PanelRight, ChevronDown, ChevronRight, Loader2, CheckCircle, Check, FileText, ShieldAlert, ShieldCheck, Edit3 } from "lucide-react";
 import type { ChatMessage, ContentBlock, PendingInteraction } from "../../lib/stream-parser";
 
 interface ChatPanelProps {
@@ -386,10 +386,17 @@ function BranchDiffBadge({
     try {
       const s = await gitDiffStat(projectPath);
       setStats(s);
-    } catch {
+      console.log("[BranchDiffBadge] stats refreshed", { projectPath, ...s });
+    } catch (e) {
+      console.warn("[BranchDiffBadge] gitDiffStat failed", { projectPath, error: e });
       setStats(null);
     }
   }, [projectPath]);
+
+  useEffect(() => {
+    console.log("[BranchDiffBadge] mounted", { projectPath, branch });
+    return () => console.log("[BranchDiffBadge] unmounted", { projectPath });
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     refreshStats();
@@ -402,11 +409,39 @@ function BranchDiffBadge({
     wasStreamingRef.current = isStreaming;
   }, [isStreaming, refreshStats]);
 
-  const hasDiff = !!stats && (stats.added > 0 || stats.removed > 0 || stats.files > 0);
+  // Periodic poll — picks up changes made outside the app (terminal vim, git checkout, etc.)
+  useEffect(() => {
+    const id = window.setInterval(refreshStats, 10000);
+    return () => window.clearInterval(id);
+  }, [refreshStats]);
+
+  // Refresh on window focus — instant sync when switching back from terminal/editor.
+  useEffect(() => {
+    const handler = () => refreshStats();
+    window.addEventListener("focus", handler);
+    return () => window.removeEventListener("focus", handler);
+  }, [refreshStats]);
+
+  const hasStats = !!stats && (stats.added > 0 || stats.removed > 0 || stats.files > 0);
 
   return (
     <div ref={ref} className="relative flex-shrink-0">
       <div className="flex items-stretch text-xs rounded-full bg-bg-tertiary overflow-hidden max-w-[280px]">
+        {hasStats && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); openDiffDialog(sessionId); }}
+              className="flex items-center gap-1 px-2 py-0.5 hover:bg-bg-tertiary/60
+                         transition-colors flex-shrink-0 tabular-nums cursor-pointer"
+              title={t("session.viewDiff")}
+            >
+              <Edit3 size={11} className="flex-shrink-0 text-text-muted" />
+              <span className={stats!.added > 0 ? "text-success" : "text-text-muted/60"}>+{stats!.added}</span>
+              <span className={stats!.removed > 0 ? "text-error" : "text-text-muted/60"}>-{stats!.removed}</span>
+            </button>
+            <span className="self-stretch w-px bg-border/50 flex-shrink-0" />
+          </>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); handleOpen(); }}
           disabled={switching}
@@ -423,41 +458,39 @@ function BranchDiffBadge({
           <span className="truncate">{branch}</span>
           <ChevronDown size={10} className="flex-shrink-0 opacity-50" />
         </button>
-        {hasDiff && (
-          <>
-            <span className="self-stretch w-px bg-border/50 flex-shrink-0" />
-            <button
-              onClick={(e) => { e.stopPropagation(); openDiffDialog(sessionId); }}
-              className="flex items-center gap-1 px-2 py-0.5 hover:bg-bg-tertiary/60
-                         transition-colors flex-shrink-0 tabular-nums cursor-pointer"
-              title={t("session.viewDiff")}
-            >
-              <span className="text-success">+{stats!.added}</span>
-              <span className="text-error">-{stats!.removed}</span>
-            </button>
-          </>
-        )}
       </div>
       {open && (
-        <div className="absolute top-full right-0 mt-1 min-w-[160px] max-w-[260px] max-h-[240px]
+        <div className="absolute top-full right-0 mt-1 min-w-[180px] max-w-[280px] max-h-[240px]
                         overflow-y-auto rounded-lg bg-bg-secondary border border-border shadow-xl z-50 py-1">
           {error && (
             <p className="px-3 py-1.5 text-[10px] text-error border-b border-border">{error}</p>
           )}
-          {branches.map((b) => (
-            <button
-              key={b}
-              onClick={(e) => { e.stopPropagation(); handleSwitch(b); }}
-              className={`flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs transition-colors truncate
-                ${b === branch
-                  ? "text-accent bg-accent/10"
-                  : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
-                }`}
-            >
-              {b === branch && <Check size={10} className="flex-shrink-0" />}
-              <span className="truncate">{b}</span>
-            </button>
-          ))}
+          {branches.map((b) => {
+            const isCurrent = b === branch;
+            return (
+              <button
+                key={b}
+                onClick={(e) => { e.stopPropagation(); handleSwitch(b); }}
+                className={`flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs transition-colors
+                  ${isCurrent
+                    ? "text-accent bg-accent/10"
+                    : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
+                  }`}
+              >
+                {isCurrent
+                  ? <Check size={10} className="flex-shrink-0" />
+                  : <span className="w-[10px] flex-shrink-0" />
+                }
+                <span className="truncate flex-1 min-w-0">{b}</span>
+                {isCurrent && hasStats && (
+                  <span className="flex items-center gap-1 flex-shrink-0 tabular-nums">
+                    <span className={stats!.added > 0 ? "text-success" : "text-text-muted/60"}>+{stats!.added}</span>
+                    <span className={stats!.removed > 0 ? "text-error" : "text-text-muted/60"}>-{stats!.removed}</span>
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -518,6 +551,14 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const isStreaming = currentSessionId ? !!streamingSessions[currentSessionId] : false;
   const [gitBranch, setGitBranch] = useState<string | null>(null);
+
+  // ── Diagnostic: log every render to confirm the latest bundle is loaded ──
+  console.log("[ChatPanel] render", {
+    currentSessionId,
+    projectPath: currentSession?.projectPath,
+    gitBranch,
+    badgeShouldRender: !!(gitBranch && currentSession?.projectPath && currentSessionId),
+  });
   const [visibleTurns, setVisibleTurns] = useState(3);
   const [pullProgress, setPullProgress] = useState(0);   // 0–1，下拉进度
   const [pullTriggered, setPullTriggered] = useState(false); // 已触发，展示全速转圈
