@@ -396,7 +396,7 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
                             border-l-2 ${
                               isActive
                                 ? "bg-accent/10 border-accent"
-                                : "border-transparent hover:bg-bg-tertiary/40"
+                                : "border-transparent hover:bg-bg-tertiary/55"
                             }`}
                           style={{ paddingLeft: padLeft, paddingRight: 10 }}
                         >
@@ -419,7 +419,7 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
                         onClick={() => setExpandedDirs((e) => ({ ...e, [node.path]: !isExp }))}
                         title={node.path}
                         className="w-full text-left py-1 transition-colors flex items-center gap-1.5
-                                   border-l-2 border-transparent hover:bg-bg-tertiary/40"
+                                   border-l-2 border-transparent hover:bg-bg-tertiary/55"
                         style={{ paddingLeft: padLeft, paddingRight: 10 }}
                       >
                         {isExp ? (

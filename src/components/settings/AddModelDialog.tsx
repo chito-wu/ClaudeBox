@@ -156,7 +156,7 @@ export default function AddModelDialog({ open, existingIds, onClose, onAdd }: Ad
                         className={`w-full flex items-center justify-between px-3 py-2 text-sm transition-colors
                           ${active
                             ? "bg-accent/10 text-text-primary"
-                            : "text-text-secondary hover:bg-bg-tertiary/40 hover:text-text-primary"
+                            : "text-text-secondary hover:bg-bg-tertiary/55 hover:text-text-primary"
                           }`}
                       >
                         <span className="flex items-center gap-2">

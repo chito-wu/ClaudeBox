@@ -2,24 +2,24 @@
 @import "highlight.js/styles/github-dark-dimmed.css";
 
 @theme {
-  --color-bg-primary: #1a1a2e;
-  --color-bg-secondary: #16213e;
-  --color-bg-tertiary: #0f3460;
-  --color-bg-chat: #1e1e3a;
-  --color-accent: #e94560;
-  --color-accent-hover: #ff6b6b;
-  --color-text-primary: #eee;
-  --color-text-secondary: #aaa;
-  --color-text-muted: #777;
-  --color-border: #2a2a4a;
-  --color-user-bubble: #3a3a6a;
-  --color-assistant-bg: #222244;
-  --color-tool-bg: #1a1a3a;
-  --color-input-bg: #252545;
-  --color-code-bg: #0d1117;
-  --color-code-header: #161b22;
+  --color-bg-primary: #0e0e12;
+  --color-bg-secondary: #18181f;
+  --color-bg-tertiary: #34343d;
+  --color-bg-chat: #121217;
+  --color-accent: #f43f5e;
+  --color-accent-hover: #fb5570;
+  --color-text-primary: #fafafa;
+  --color-text-secondary: #c4c4cc;
+  --color-text-muted: #7a7a82;
+  --color-border: #353540;
+  --color-user-bubble: #232329;
+  --color-assistant-bg: #1a1a20;
+  --color-tool-bg: #18181f;
+  --color-input-bg: #1f1f26;
+  --color-code-bg: #0a0a0e;
+  --color-code-header: #18181f;
   --color-success: #4ade80;
-  --color-warning: #fbbf24;
+  --color-warning: #f59e0b;
   --color-error: #f87171;
 }
 
@@ -194,7 +194,7 @@ html, body, #root {
   margin: 0.8em 0;
   padding: 0.4em 1em;
   color: var(--color-text-secondary);
-  background: rgba(233, 69, 96, 0.04);
+  background: color-mix(in srgb, var(--color-accent) 5%, transparent);
   border-radius: 0 6px 6px 0;
 }
 .markdown-body blockquote p { margin: 0.3em 0; }

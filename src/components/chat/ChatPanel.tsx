@@ -474,7 +474,7 @@ function BranchDiffBadge({
                 className={`flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs transition-colors
                   ${isCurrent
                     ? "text-accent bg-accent/10"
-                    : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
+                    : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50"
                   }`}
               >
                 {isCurrent
@@ -1150,7 +1150,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
                   <div className="text-center pb-3">
                     <button
                       onClick={loadMoreTurns}
-                      className="text-sm font-semibold text-text-muted/60 hover:text-text-muted transition-colors px-3 py-1 rounded-full hover:bg-bg-tertiary/30"
+                      className="text-sm font-semibold text-text-muted/60 hover:text-text-muted transition-colors px-3 py-1 rounded-full hover:bg-bg-tertiary/50"
                     >
                       ↑ 查看更早的对话
                     </button>

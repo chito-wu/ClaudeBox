@@ -250,7 +250,7 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
         className={`group relative flex items-center gap-2 pl-3 pr-3 py-2.5 rounded-lg mb-0.5 cursor-pointer overflow-hidden transition-colors ${
           isActive
             ? "bg-bg-tertiary/50 text-text-primary"
-            : "text-text-secondary hover:bg-bg-tertiary/35 hover:text-text-primary"
+            : "text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary"
         } ${isDragging ? "opacity-40" : ""} ${
           isDropTarget ? "ring-1 ring-accent/60" : ""
         }`}

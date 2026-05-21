@@ -203,7 +203,7 @@ function ToolsSelector({
           <button
             onClick={() => onChange(allUserSelected ? selected.filter((t) => !userToolValues.includes(t)) : [...selected.filter((t) => !userToolValues.includes(t)), ...userToolValues])}
             className="block w-full text-left px-3 py-1.5 text-xs text-text-muted
-                       hover:text-text-primary hover:bg-bg-tertiary/30 transition-colors border-b border-border"
+                       hover:text-text-primary hover:bg-bg-tertiary/50 transition-colors border-b border-border"
           >
             {allUserSelected ? t("input.deselectAll") : t("input.selectAll")}
           </button>
@@ -217,7 +217,7 @@ function ToolsSelector({
                   ${isSelected
                     ? "text-text-primary"
                     : "text-text-muted hover:text-text-secondary"
-                  } hover:bg-bg-tertiary/30`}
+                  } hover:bg-bg-tertiary/50`}
               >
                 <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0
                   ${isSelected
@@ -291,7 +291,7 @@ function ModelPanel({
                   className={`block w-full text-left px-2 py-1.5 text-xs rounded-md transition-colors truncate ${
                     m === model
                       ? "text-accent bg-accent/10"
-                      : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50"
                   }`}
                 >
                   {m}
@@ -310,7 +310,7 @@ function ModelPanel({
                   className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     level === effort
                       ? "bg-accent text-white"
-                      : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50"
                   }`}
                 >
                   {t(`effort.${level}`)}
@@ -465,7 +465,7 @@ function SkillsPopover({
                       setSearch("");
                     }}
                     className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs
-                               text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30
+                               text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50
                                transition-colors"
                   >
                     <span className="text-accent font-mono flex-shrink-0">/{skill.name.split(":").pop()}</span>
@@ -680,7 +680,7 @@ function ContextProgressBar({ tokens, contextWindow, label }: { tokens?: number;
                   className={`flex-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
                     (contextWindowSetting || "200k") === key
                       ? "bg-accent text-white"
-                      : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/30"
+                      : "text-text-secondary hover:text-text-primary hover:bg-bg-tertiary/50"
                   }`}
                 >
                   {t(`contextWindow.${key}`)}
@@ -977,7 +977,7 @@ export default function InputArea({
                 {queue.map((q, i) => (
                   <div
                     key={q.id}
-                    className="group flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-bg-tertiary/20 hover:bg-bg-tertiary/35 transition-colors"
+                    className="group flex items-center gap-2 text-xs px-2 py-1 rounded-md bg-bg-tertiary/20 hover:bg-bg-tertiary/50 transition-colors"
                   >
                     <span className="text-[10px] text-text-muted w-5 flex-shrink-0">
                       #{i + 1}
