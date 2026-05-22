@@ -38,6 +38,8 @@ ClaudeBox 将 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 封�
 
 <p align="center">
   <img src="screenshot.png" width="800" alt="ClaudeBox 截图">
+  <img width="800" alt="image" src="https://github.com/user-attachments/assets/a6d87843-9b58-42ab-885e-56f4c8b8d3d3" />
+
 </p>
 
 ## 功能特性
