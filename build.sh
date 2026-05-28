@@ -246,7 +246,10 @@ cmd_oss_mirror() {
 
   local STAGE
   STAGE=$(mktemp -d -t claudebox-oss-mirror.XXXXXX)
-  trap 'rm -rf "$STAGE"' EXIT
+  # `set -u` plus `local STAGE` means the EXIT trap runs after STAGE is out of
+  # scope — guard with :- so we don't crash on cleanup. Also check `-d` so a
+  # successful local cleanup at function end is idempotent.
+  trap '[[ -n "${STAGE:-}" && -d "${STAGE:-}" ]] && rm -rf "$STAGE"' EXIT
 
   info "Downloading ${TAG} assets from GitHub → $STAGE ..."
   # Use multiple --pattern flags so we get the exact set the updater needs.

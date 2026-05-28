@@ -17,8 +17,9 @@ export type UpdateCallback = (status: UpdateStatus) => void;
 
 /** Update endpoints (must match tauri.conf.json → plugins.updater.endpoints) */
 const UPDATE_ENDPOINTS = [
-  "https://claudebox-update-proxy.braverior.workers.dev/latest.json",
   "https://github.com/braverior/ClaudeBox/releases/latest/download/latest.json",
+  "https://claudebox-update-proxy.braverior.workers.dev/latest.json",
+  "https://dmugc-cn.domobcdn.com/claudebox/latest.json",
 ];
 
 /** Log to both console and the app's Debug Panel */
