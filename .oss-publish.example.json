@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy this file to .oss-publish.json (already gitignored) and fill in real values. All fields are optional except access_key_id and access_key_secret.",
+  "bucket": "dm-ugc",
+  "endpoint": "oss-cn-beijing.aliyuncs.com",
+  "cdn_domain": "https://dmugc-cn.domobcdn.com",
+  "prefix": "claudebox",
+  "access_key_id": "LTAI...",
+  "access_key_secret": "..."
+}

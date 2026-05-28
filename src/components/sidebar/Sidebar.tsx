@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Settings,
+  Settings2,
   PanelLeftClose,
   PanelLeft,
   Sun,
@@ -28,6 +29,8 @@ import { useLarkStore, type LarkStatus } from "../../stores/larkStore";
 import { startLarkBot, stopLarkBot } from "../../lib/lark-ipc";
 import { resolveModelCreds } from "../../lib/providers";
 import { useT } from "../../lib/i18n";
+import { isNetworkError, isMacOS } from "../../lib/utils";
+import { openProxySettings } from "../../lib/claude-ipc";
 import { startWindowDrag, isWindows, handleTitleBarDoubleClick } from "../../lib/utils";
 import type { UpdateStatus } from "../../lib/updater";
 
@@ -144,6 +147,8 @@ export default function Sidebar({
     if (!updateStatus) return null;
 
     if (updateStatus.error) {
+      const showProxyButton =
+        isNetworkError(updateStatus.error) && (isMacOS || isWindows);
       return (
         <div className="space-y-1">
           <span className="text-xs text-red-400">
@@ -152,13 +157,27 @@ export default function Sidebar({
           <p className="text-[10px] text-text-muted break-all line-clamp-2" title={updateStatus.error}>
             {updateStatus.error}
           </p>
-          <button
-            onClick={() => shellOpen("https://github.com/braverior/ClaudeBox/releases/latest").catch(() => {})}
-            className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
-          >
-            <ExternalLink size={11} />
-            {t("about.manualDownload")}
-          </button>
+          <p className="text-[10px] text-text-muted/80">
+            {t("about.updateErrorHint")}
+          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {showProxyButton && (
+              <button
+                onClick={() => openProxySettings().catch(() => {})}
+                className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+              >
+                <Settings2 size={11} />
+                {t("about.openProxySettings")}
+              </button>
+            )}
+            <button
+              onClick={() => shellOpen("https://github.com/braverior/ClaudeBox/releases/latest").catch(() => {})}
+              className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+            >
+              <ExternalLink size={11} />
+              {t("about.manualDownload")}
+            </button>
+          </div>
         </div>
       );
     }

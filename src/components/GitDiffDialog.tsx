@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { X, ChevronDown, ChevronRight, FileCode2, RefreshCw, Loader2, PanelLeftClose, PanelLeftOpen, WrapText } from "lucide-react";
 import { gitDiff } from "../lib/claude-ipc";
 import { useT } from "../lib/i18n";
@@ -204,6 +204,104 @@ function renderLinesWithNumbers(
   return { rows, oldDigits, newDigits };
 }
 
+// ── Per-file diff block ─────────────────────────────────────────────
+// Memoized: only re-renders when its own block / collapsed flag / wrap mode
+// changes. activePath, sidebarCollapsed, expandedDirs etc. are isolated to the
+// parent. Critical for large diffs (10k+ lines = 40k+ DOM nodes) where rebuilding
+// vnodes on every state change pegs the CPU.
+interface DiffBlockProps {
+  block: FileBlock;
+  isCollapsed: boolean;
+  wrap: boolean;
+  onToggleCollapsed: (path: string) => void;
+  registerRef: (path: string, el: HTMLDivElement | null) => void;
+}
+
+const DiffBlock = memo(function DiffBlock({
+  block,
+  isCollapsed,
+  wrap,
+  onToggleCollapsed,
+  registerRef,
+}: DiffBlockProps) {
+  // Line-number computation is purely a function of block.lines — cache it.
+  const { rows, oldDigits, newDigits } = useMemo(
+    () => renderLinesWithNumbers(block.lines),
+    [block.lines]
+  );
+  // Each digit is ~1ch in mono font; +1.5ch padding/visual breathing.
+  const oldGutter = `${oldDigits + 1.5}ch`;
+  const newGutter = `${newDigits + 1.5}ch`;
+  // Skip paint/layout for off-screen rows. The browser keeps a placeholder of
+  // `containIntrinsicSize` height and only renders when the row scrolls into
+  // view. Massively cuts CPU on diffs with 1000s of lines.
+  // In wrap mode line height varies, so the intrinsic-size hint becomes wrong
+  // and scroll positions jitter — disable virtualization there.
+  const rowVisibility: React.CSSProperties | undefined = wrap
+    ? undefined
+    : {
+        contentVisibility: "auto" as React.CSSProperties["contentVisibility"],
+        containIntrinsicSize: "21px",
+      };
+
+  return (
+    <div
+      ref={(el) => registerRef(block.path, el)}
+      data-file-path={block.path}
+      className="rounded-lg border border-border overflow-hidden bg-bg-secondary scroll-mt-2"
+    >
+      <button
+        onClick={() => onToggleCollapsed(block.path)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left
+                   bg-bg-tertiary/40 hover:bg-bg-tertiary/60 transition-colors"
+      >
+        {isCollapsed ? (
+          <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
+        ) : (
+          <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
+        )}
+        <span className="font-mono text-[13px] text-text-primary truncate min-w-0 flex-1">
+          {block.path}
+        </span>
+        <span className="flex-shrink-0 text-xs text-success">+{block.added}</span>
+        <span className="flex-shrink-0 text-xs text-error">-{block.removed}</span>
+      </button>
+      {!isCollapsed && (
+        <pre
+          className={`font-mono text-[13px] leading-[1.55] tabular-nums ${
+            wrap ? "whitespace-pre-wrap break-all" : "overflow-x-auto whitespace-pre"
+          }`}
+          style={{ tabSize: 4 }}
+        >
+          {rows.map((row) => (
+            <div
+              key={row.key}
+              className={`${lineClass(row.kind)} flex`}
+              style={rowVisibility}
+            >
+              <span
+                className="select-none flex-shrink-0 pr-2 pl-3 text-right opacity-50 border-r border-border/40"
+                style={{ width: oldGutter }}
+              >
+                {row.oldNo}
+              </span>
+              <span
+                className="select-none flex-shrink-0 pr-2 pl-3 text-right opacity-50 border-r border-border/40"
+                style={{ width: newGutter }}
+              >
+                {row.newNo}
+              </span>
+              <span className={`flex-1 px-3 ${wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}>
+                {row.text || " "}
+              </span>
+            </div>
+          ))}
+        </pre>
+      )}
+    </div>
+  );
+});
+
 export default function GitDiffDialog({ open, projectPath, projectName, onClose }: GitDiffDialogProps) {
   const t = useT();
   const [loading, setLoading] = useState(false);
@@ -251,35 +349,55 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
   const [wrap, setWrap] = useState(false);
   const isDirExpanded = (dirPath: string) => expandedDirs[dirPath] !== false;
 
-  // Sync sidebar active highlight with main scroll position.
+  // Sync sidebar active highlight with main scroll position. Uses
+  // IntersectionObserver — orders of magnitude cheaper than measuring every
+  // file's getBoundingClientRect() on each scroll frame.
   useEffect(() => {
     const root = bodyRef.current;
     if (!root || blocks.length === 0) return;
-    let ticking = false;
-    const update = () => {
-      ticking = false;
-      const containerTop = root.getBoundingClientRect().top;
-      let bestPath: string | null = blocks[0].path;
-      let bestTop = -Infinity;
-      for (const block of blocks) {
-        const el = fileRefs.current[block.path];
-        if (!el) continue;
-        const top = el.getBoundingClientRect().top - containerTop;
-        if (top <= 80 && top > bestTop) {
-          bestTop = top;
-          bestPath = block.path;
+    const visible = new Map<string, number>(); // path → top offset relative to root
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const path = (entry.target as HTMLElement).dataset.filePath;
+          if (!path) continue;
+          if (entry.isIntersecting) {
+            visible.set(path, entry.boundingClientRect.top);
+          } else {
+            visible.delete(path);
+          }
         }
-      }
-      if (bestPath) setActivePath(bestPath);
-    };
-    const onScroll = () => {
-      if (ticking) return;
-      ticking = true;
-      requestAnimationFrame(update);
-    };
-    update();
-    root.addEventListener("scroll", onScroll, { passive: true });
-    return () => root.removeEventListener("scroll", onScroll);
+        // Pick the visible file whose top is closest to (but ≤) the 80px mark
+        // — i.e. the file whose header just passed under the dialog top edge.
+        let bestPath: string | null = null;
+        let bestTop = -Infinity;
+        const containerTop = root.getBoundingClientRect().top;
+        for (const [path, top] of visible) {
+          const rel = top - containerTop;
+          if (rel <= 80 && rel > bestTop) {
+            bestTop = rel;
+            bestPath = path;
+          }
+        }
+        if (!bestPath && visible.size > 0) {
+          // All currently visible blocks are below the 80px mark — pick the topmost.
+          let topMost = Infinity;
+          for (const [path, top] of visible) {
+            if (top < topMost) {
+              topMost = top;
+              bestPath = path;
+            }
+          }
+        }
+        if (bestPath) setActivePath(bestPath);
+      },
+      { root, rootMargin: "0px 0px -50% 0px", threshold: [0, 1] }
+    );
+    for (const block of blocks) {
+      const el = fileRefs.current[block.path];
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
   }, [blocks]);
 
   const scrollToFile = (path: string) => {
@@ -289,6 +407,21 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
     setActivePath(path);
     root.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
   };
+
+  // Stable callbacks passed to memoized DiffBlock — referential identity must
+  // not change between renders or React.memo's referential comparison would
+  // re-render every block.
+  const handleToggleCollapsed = useMemo(
+    () => (path: string) =>
+      setCollapsed((c) => ({ ...c, [path]: !c[path] })),
+    []
+  );
+  const registerFileRef = useMemo(
+    () => (path: string, el: HTMLDivElement | null) => {
+      fileRefs.current[path] = el;
+    },
+    []
+  );
 
   if (!open) return null;
 
@@ -465,72 +598,16 @@ export default function GitDiffDialog({ open, projectPath, projectName, onClose 
             )}
             {!loading && !error && blocks.length > 0 && (
               <div className="px-3 py-3 space-y-3">
-                {blocks.map((block) => {
-                  const isCollapsed = collapsed[block.path];
-                  const { rows, oldDigits, newDigits } = renderLinesWithNumbers(block.lines);
-                  // Each digit is ~1ch in mono font; +1.25ch padding/visual breathing.
-                  const oldGutter = `${oldDigits + 1.5}ch`;
-                  const newGutter = `${newDigits + 1.5}ch`;
-                  return (
-                    <div
-                      key={block.path}
-                      ref={(el) => { fileRefs.current[block.path] = el; }}
-                      data-file-path={block.path}
-                      className="rounded-lg border border-border overflow-hidden bg-bg-secondary scroll-mt-2"
-                    >
-                      <button
-                        onClick={() =>
-                          setCollapsed((c) => ({ ...c, [block.path]: !c[block.path] }))
-                        }
-                        className="w-full flex items-center gap-2 px-3 py-2 text-left
-                                   bg-bg-tertiary/40 hover:bg-bg-tertiary/60 transition-colors"
-                      >
-                        {isCollapsed ? (
-                          <ChevronRight size={14} className="text-text-muted flex-shrink-0" />
-                        ) : (
-                          <ChevronDown size={14} className="text-text-muted flex-shrink-0" />
-                        )}
-                        <span className="font-mono text-[13px] text-text-primary truncate min-w-0 flex-1">
-                          {block.path}
-                        </span>
-                        <span className="flex-shrink-0 text-xs text-success">
-                          +{block.added}
-                        </span>
-                        <span className="flex-shrink-0 text-xs text-error">
-                          -{block.removed}
-                        </span>
-                      </button>
-                      {!isCollapsed && (
-                        <pre
-                          className={`font-mono text-[13px] leading-[1.55] tabular-nums ${
-                            wrap ? "whitespace-pre-wrap break-all" : "overflow-x-auto whitespace-pre"
-                          }`}
-                          style={{ tabSize: 4 }}
-                        >
-                          {rows.map((row) => (
-                            <div key={row.key} className={`${lineClass(row.kind)} flex`}>
-                              <span
-                                className="select-none flex-shrink-0 pr-2 pl-3 text-right opacity-50 border-r border-border/40"
-                                style={{ width: oldGutter }}
-                              >
-                                {row.oldNo}
-                              </span>
-                              <span
-                                className="select-none flex-shrink-0 pr-2 pl-3 text-right opacity-50 border-r border-border/40"
-                                style={{ width: newGutter }}
-                              >
-                                {row.newNo}
-                              </span>
-                              <span className={`flex-1 px-3 ${wrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}>
-                                {row.text || " "}
-                              </span>
-                            </div>
-                          ))}
-                        </pre>
-                      )}
-                    </div>
-                  );
-                })}
+                {blocks.map((block) => (
+                  <DiffBlock
+                    key={block.path}
+                    block={block}
+                    isCollapsed={!!collapsed[block.path]}
+                    wrap={wrap}
+                    onToggleCollapsed={handleToggleCollapsed}
+                    registerRef={registerFileRef}
+                  />
+                ))}
               </div>
             )}
           </div>

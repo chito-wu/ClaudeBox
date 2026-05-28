@@ -1056,7 +1056,7 @@ export default function InputArea({
 
             {/* Inline toolbar */}
             {onModelChange && (
-              <div className="flex items-center gap-0.5 min-w-0 flex-wrap">
+              <div className="flex items-center gap-0.5 min-w-0 flex-nowrap overflow-x-auto scrollbar-none">
                 {/* New session button */}
                 {onClearSession && (
                   <>

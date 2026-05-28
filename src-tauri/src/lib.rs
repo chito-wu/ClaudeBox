@@ -71,6 +71,7 @@ pub fn run() {
             claude::storage_read,
             claude::storage_write,
             claude::storage_remove,
+            claude::open_proxy_settings,
             // Lark bot commands
             lark::start_lark_bot,
             lark::stop_lark_bot,

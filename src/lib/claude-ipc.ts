@@ -268,6 +268,11 @@ export async function getContextTokens(sessionId: string, projectPath: string): 
   return invoke("get_context_tokens", { sessionId, projectPath });
 }
 
+/** Open the OS network proxy settings panel (macOS / Windows). */
+export async function openProxySettings(): Promise<void> {
+  return invoke("open_proxy_settings");
+}
+
 /**
  * Frontend-side debug event bus.
  * Backed by Tauri's IPC event system so events broadcast across windows

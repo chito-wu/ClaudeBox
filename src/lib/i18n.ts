@@ -194,6 +194,7 @@ const en: TranslationDict = {
   "about.updateNetworkError": "Cannot reach update server",
   "about.updateErrorHint": "Check your network, or try enabling a proxy and retry.",
   "about.updateErrorDetails": "Show error details",
+  "about.openProxySettings": "Open proxy settings",
   "about.retry": "Retry",
   "about.manualDownload": "Manual download",
 
@@ -567,6 +568,7 @@ const zh: TranslationDict = {
   "about.updateNetworkError": "无法连接到更新服务器",
   "about.updateErrorHint": "请检查网络,或尝试打开代理后重试。",
   "about.updateErrorDetails": "查看错误详情",
+  "about.openProxySettings": "打开系统代理设置",
   "about.retry": "重试",
   "about.manualDownload": "手动下载",
 

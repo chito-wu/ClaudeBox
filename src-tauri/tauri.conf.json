@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ClaudeBox",
-  "version": "0.5.12",
+  "version": "0.5.13",
   "identifier": "com.claudebox.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -17,7 +17,7 @@
         "hiddenTitle": true,
         "width": 1100,
         "height": 750,
-        "minWidth": 800,
+        "minWidth": 1000,
         "minHeight": 600,
         "resizable": true,
         "fullscreen": false,
@@ -56,8 +56,9 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEwMTkwNzQzREY0NkEwQzAKUldUQW9FYmZRd2NaRUpKaFNQbWZ4Y0FQQ2duMjNOeEZ5dWdqMTM0K2FVcDBZYS84dDFMWHR5ckkK",
       "endpoints": [
+        "https://github.com/braverior/ClaudeBox/releases/latest/download/latest.json",
         "https://claudebox-update-proxy.braverior.workers.dev/latest.json",
-        "https://github.com/braverior/ClaudeBox/releases/latest/download/latest.json"
+        "https://dmugc-cn.domobcdn.com/claudebox/latest.json"
       ]
     }
   }

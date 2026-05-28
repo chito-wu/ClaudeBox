@@ -1,6 +1,13 @@
 export const isWindows = navigator.userAgent.includes("Windows");
 export const isMacOS = navigator.userAgent.includes("Macintosh");
 
+/** Heuristic: does this updater error look like a network/connectivity issue
+ *  (vs. e.g. a signature/parse error)? Used to gate the "open proxy settings"
+ *  hint so users don't see it for unrelated failures. */
+export function isNetworkError(msg: string): boolean {
+  return /network|timeout|timed out|econn|enotfound|dns|fetch|unreachable|aborted|connection|socket|host/i.test(msg);
+}
+
 /** Generate a UUID-v4-style random ID */
 export function v4Style(): string {
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {

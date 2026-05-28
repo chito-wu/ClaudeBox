@@ -47,3 +47,6 @@ npm-debug.log*
 
 # ── Local test artifacts ──────────────────────────────────
 test-share-*.png
+
+# ── OSS publish credentials (local override, never commit) ────────
+.oss-publish.json

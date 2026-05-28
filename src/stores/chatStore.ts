@@ -259,8 +259,31 @@ function processTaskToolCalls(sessionId: string, content: ContentBlock[]) {
   for (const block of content) {
     if (block.type === "tool_use" && block.name && block.input) {
       if (block.name === "TaskCreate" || block.name === "TaskUpdate" || block.name === "TodoWrite") {
-        taskStore.handleToolUse(sessionId, block.name, block.input);
+        taskStore.handleToolUse(sessionId, block.name, block.input, block.id);
       }
+    }
+  }
+}
+
+/** When TaskCreate's tool_result arrives, upgrade the placeholder (tool_use_id)
+ *  to the real "#N" id so subsequent TaskUpdate(taskId="N") matches. */
+function processTaskToolResults(sessionId: string, content: ContentBlock[], assistantMsgs: ChatMessage[]) {
+  for (const block of content) {
+    if (block.type !== "tool_result" || !block.tool_use_id) continue;
+    let isTaskCreate = false;
+    for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+      const m = assistantMsgs[i];
+      if (m.role !== "assistant") continue;
+      const hit = m.content.find(
+        (b) => b.type === "tool_use" && b.id === block.tool_use_id && b.name === "TaskCreate"
+      );
+      if (hit) { isTaskCreate = true; break; }
+    }
+    if (!isTaskCreate) continue;
+    const text = typeof block.content === "string" ? block.content : "";
+    const match = text.match(/Task #(\d+)/);
+    if (match) {
+      useTaskStore.getState().patchTaskId(sessionId, block.tool_use_id, match[1]);
     }
   }
 }
@@ -636,6 +659,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
       } else if (event.type === "user" && event.message) {
         const incomingContent: ContentBlock[] = event.message.content || [];
+
+        processTaskToolResults(sessionId, incomingContent, msgs);
 
         for (const block of incomingContent) {
           if (block.type === "tool_result" && block.tool_use_id) {

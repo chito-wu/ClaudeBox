@@ -17,8 +17,10 @@ interface TaskState {
   clearTasks: (sessionId: string) => void;
   /** Mark all non-completed tasks for a session as completed (called on stream end) */
   markAllCompleted: (sessionId: string) => void;
+  /** Replace a task's id (used to upgrade tool_use_id placeholder → real task id from tool_result) */
+  patchTaskId: (sessionId: string, oldId: string, newId: string) => void;
   /** Parse a tool_use block to extract task operations */
-  handleToolUse: (sessionId: string, name: string, input: Record<string, unknown>, result?: string) => void;
+  handleToolUse: (sessionId: string, name: string, input: Record<string, unknown>, toolUseId?: string, result?: string) => void;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
@@ -54,7 +56,16 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     });
   },
 
-  handleToolUse: (sessionId, name, input, result) => {
+  patchTaskId: (sessionId, oldId, newId) => {
+    if (oldId === newId) return;
+    set({
+      tasks: get().tasks.map((t) =>
+        t.sessionId === sessionId && t.id === oldId ? { ...t, id: newId } : t
+      ),
+    });
+  },
+
+  handleToolUse: (sessionId, name, input, toolUseId, result) => {
     if (name === "TaskCreate" || name === "TodoWrite") {
       // TodoWrite might have a different format
       if (name === "TodoWrite" && Array.isArray(input.todos)) {
@@ -76,8 +87,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         return;
       }
 
-      // TaskCreate
-      const taskId = result?.match(/#(\d+)/)?.[1] || `${Date.now()}`;
+      // TaskCreate — at tool_use time we don't yet know the real "#N" id,
+      // so use tool_use_id as a stable placeholder. patchTaskId will upgrade
+      // it to the real numeric id once tool_result arrives.
+      const taskId =
+        result?.match(/#(\d+)/)?.[1] || toolUseId || `${Date.now()}`;
       const task: Task = {
         id: taskId,
         subject: (input.subject as string) || "Untitled Task",

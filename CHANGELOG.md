@@ -4,6 +4,21 @@ ClaudeBox 的所有版本更新都记录在这里。
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.13] - 2026-05-28
+
+### 新增
+- 自动更新新增阿里云 OSS CDN 作为第三个 endpoint:GitHub 与 Cloudflare Worker 都不可达时仍能拉到更新元数据(国内用户兜底)
+- 升级失败时 Sidebar 与设置面板新增「打开系统代理设置」按钮(macOS / Windows 各跳到对应系统面板),补齐网络错误引导文案
+- `./build.sh oss-mirror [tag]` 独立子命令:从 GitHub Release 下载产物并镜像到阿里云 OSS。OSS 凭证通过 `.oss-publish.json`(已 gitignore)在本地配置,完全不进入 CI/Action
+
+### 优化
+- Git Diff 对话框大幅提速:每个文件块拆为 `React.memo` 子组件,行号计算缓存,滚动监听换成 `IntersectionObserver`,行级 `content-visibility: auto` 让浏览器跳过视口外行的 paint/layout——上千行 diff 滚动几乎零卡顿
+- 窗口最小宽度从 800 提到 1000,底部工具条改为不换行 + 横向溢出,极窄窗口下输入区不再被挤换行
+- 侧边栏会话右键菜单弹出后超出 viewport 时自动反向贴边,避免「删除」等末位选项被屏幕底部裁掉
+
+### 修复
+- 任务列表中间状态无法实时刷新:`TaskCreate` 在 tool_use 阶段用 `Date.now()` 当本地 id,与服务端真实 `#N` 不匹配,所有 `TaskUpdate` 静默丢失,直到流结束 `markAllCompleted` 一次性变绿。改为先用 `tool_use_id` 占位,`tool_result` 到达时升级为真实 ID。该问题在 Claude Code CLI 内置 todo 工具从 `TodoWrite` 切到 `TaskCreate`/`TaskUpdate` 后才暴露
+
 ## [0.5.12] - 2026-05-21
 
 ### 新增

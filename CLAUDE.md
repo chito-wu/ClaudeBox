@@ -79,7 +79,7 @@ The real Claude session ID arrives in the system `init` stream event and is stor
 | `src/components/chat/ToolCallCard.tsx` | Renders every tool call with approve/deny controls + interactive forms for AskUserQuestion / ExitPlanMode. |
 | `src/components/chat/InputArea.tsx` | Message input, attachments, model/mode/tools pickers, git branch switcher. |
 | `src-tauri/capabilities/default.json` | Tauri v2 permission list — adding a new `core:*` invoke often requires adding the permission here too. |
-| `build.sh` | Sign + notarize + publish pipeline. Reads version from `tauri.conf.json`, uploads DMG to GH Release, updates Homebrew Cask at `braverior/homebrew-tap`. |
+| `build.sh` | Sign + notarize + publish pipeline. Reads version from `tauri.conf.json`, uploads DMG to GH Release, updates Homebrew Cask at `braverior/homebrew-tap`. OSS mirror is a separate `oss-mirror` subcommand — see below. |
 | `cloudflare-worker/` | Update proxy Worker for users in regions with GitHub connectivity issues. Rewrites `latest.json` download URLs to the Worker's own proxy endpoints. |
 
 ## Adding a new Tauri command
@@ -115,6 +115,45 @@ System proxy is detected via `scutil --proxy` (macOS) or registry (Windows) and 
 ## Signing & release
 
 macOS release requires `APPLE_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_ID_PASSWORD`, `APPLE_TEAM_ID` (notarization). Tauri updater signing uses `TAURI_SIGNING_PRIVATE_KEY` / `_PASSWORD`. See `build.sh` header for the full env var list and `docs/code-signing.md` for the cert setup.
+
+## Update endpoints (multi-source)
+
+`tauri.conf.json` lists three updater endpoints, tried in order:
+
+1. **GitHub Release** (primary) — `releases/latest/download/latest.json`
+2. **Cloudflare Worker proxy** — for users where GitHub direct access is unreliable but the Worker is reachable
+3. **Aliyun OSS CDN** — `https://dmugc-cn.domobcdn.com/claudebox/latest.json`, the in-China fallback that `build.sh` mirrors to on every publish
+
+Tauri updater walks the list and uses the first endpoint that returns a valid signed `latest.json`. Signature verification is client-side (ed25519), so adding mirrors does not weaken integrity.
+
+## OSS mirror (build.sh oss-mirror)
+
+OSS upload is a **separate command** from `publish`, intentionally — it keeps the OSS access key off CI/Action runners and on a single trusted developer machine.
+
+```bash
+./build.sh publish              # GitHub Release + Homebrew Cask only
+./build.sh oss-mirror           # download GH Release assets → upload to OSS
+./build.sh oss-mirror v0.5.13   # mirror a specific tag
+```
+
+How it works:
+
+- Uses `gh release download` to pull the **actually-published** assets from GitHub (DMG / `.sig` / `.tar.gz` / `.tar.gz.sig` / Windows installers / `latest.json`) into a temp dir. Local build outputs are not consulted, so you can run this from any machine — including a different OS than the one that built a particular artifact.
+- `scripts/oss-publish.mjs` rewrites `latest.json` so its `platforms.*.url` fields point at the OSS CDN, then uploads to `oss://dm-ugc/claudebox/v<X.Y.Z>/` (versioned snapshot) and `oss://dm-ugc/claudebox/latest.json` (stable path with `Cache-Control: no-cache` so users see new versions immediately)
+- Hard-fails (not warns) on missing credentials — when you ask for an OSS mirror, you mean it.
+
+Credentials resolution order (first hit wins):
+1. CLI flags on `scripts/oss-publish.mjs`
+2. Env vars: `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` (and `OSS_BUCKET` / `OSS_REGION` / `OSS_CDN_DOMAIN`)
+3. **Repo-local `.oss-publish.json`** (gitignored — copy `.oss-publish.example.json` and fill in real values). This is the recommended path for solo developers; `oss-mirror` runs only on machines that have this file.
+4. `~/.claude/skills/oss-upload/config.json` (compatibility — picks up bucket/region/CDN/access keys, but **not** prefix, since that's project-specific)
+
+To set up on a new machine:
+```bash
+cp .oss-publish.example.json .oss-publish.json
+# Edit .oss-publish.json — fill in access_key_id / access_key_secret
+./build.sh oss-mirror v0.5.13   # downloads from GH Release, uploads to OSS
+```
 
 ## Release workflow (CHANGELOG required before tagging)
 

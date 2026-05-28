@@ -8,6 +8,9 @@ set -euo pipefail
 #   ./build.sh sign             Codesign + notarize built .app & DMG
 #   ./build.sh publish          Upload DMG to GitHub Release + update Homebrew Cask
 #   ./build.sh all              dmg → sign → publish
+#   ./build.sh oss-mirror [tag] Mirror a published GitHub Release to Aliyun OSS
+#                               (independent of publish — keeps OSS creds out
+#                               of CI). Defaults to tauri.conf.json's version.
 #
 # Required env vars (sign):
 #   APPLE_SIGNING_IDENTITY      e.g. "Developer ID Application: Lele Huang (XXXXXXXXXX)"
@@ -19,10 +22,16 @@ set -euo pipefail
 # Required env vars (publish):
 #   GITHUB_TOKEN                gh PAT with repo scope
 #
+# Required env vars (oss-mirror):
+#   OSS_ACCESS_KEY_ID           Aliyun AK (falls back to ~/.claude/skills/oss-upload/config.json)
+#   OSS_ACCESS_KEY_SECRET       Aliyun SK
+#
 # Optional:
 #   HOMEBREW_TAP                Tap repo (default: braverior/homebrew-tap)
 #   TAURI_SIGNING_PRIVATE_KEY   Tauri updater private key (for .sig files)
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#   OSS_BUCKET / OSS_REGION / OSS_CDN_DOMAIN / OSS_PREFIX
+#                               Override OSS defaults (dm-ugc / oss-cn-beijing / dmugc-cn.domobcdn.com / claudebox)
 # ─────────────────────────────────────────────────────────────────────
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -192,6 +201,93 @@ cmd_publish() {
   echo ""
   ok "Published ${TAG} — mark the draft release as public when ready:"
   info "  https://github.com/${GITHUB_REPO}/releases/tag/${TAG}"
+  info "  Run './build.sh oss-mirror' afterwards to mirror to Aliyun OSS (in-China CDN fallback)."
+}
+
+# ═════════════════════════════════════════════════════════════════════
+# oss-mirror — download published GitHub Release assets and mirror them
+#              to Aliyun OSS (in-China CDN fallback for the auto-updater)
+# ═════════════════════════════════════════════════════════════════════
+#
+# Decoupled from `publish` on purpose: keep the GH Actions / publish path
+# free of OSS credentials. Run this from a developer machine that already
+# has the OSS access key (env vars or ~/.claude/skills/oss-upload/config.json).
+#
+# Source of truth is whatever is *actually* on the GitHub Release — including
+# artifacts uploaded from a different build machine (e.g. Windows installer
+# uploaded by a teammate). Local build outputs are NOT consulted.
+#
+# Usage:
+#   ./build.sh oss-mirror              # mirror tag matching tauri.conf.json version
+#   ./build.sh oss-mirror v0.5.13      # mirror an explicit tag
+cmd_oss_mirror() {
+  command -v gh >/dev/null 2>&1 || err "'gh' CLI required — brew install gh"
+  command -v node >/dev/null 2>&1 || err "node required"
+
+  local TAG="${1:-v${VERSION}}"
+  [[ "$TAG" == v* ]] || TAG="v${TAG}"
+  local VER="${TAG#v}"
+
+  # Credential check — fail loud here (unlike inside publish), since the user
+  # explicitly asked for an OSS mirror.
+  if [[ -z "${OSS_ACCESS_KEY_ID:-}" || -z "${OSS_ACCESS_KEY_SECRET:-}" ]]; then
+    if [[ ! -f "$HOME/.claude/skills/oss-upload/config.json" ]]; then
+      err "OSS credentials not configured.
+   Set OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET, or populate
+   ~/.claude/skills/oss-upload/config.json"
+    fi
+  fi
+
+  # Verify the GitHub release actually exists.
+  if ! gh release view "$TAG" --repo "$GITHUB_REPO" &>/dev/null; then
+    err "GitHub Release ${TAG} not found in ${GITHUB_REPO}.
+   Run './build.sh publish' first, or pass an existing tag."
+  fi
+
+  local STAGE
+  STAGE=$(mktemp -d -t claudebox-oss-mirror.XXXXXX)
+  trap 'rm -rf "$STAGE"' EXIT
+
+  info "Downloading ${TAG} assets from GitHub → $STAGE ..."
+  # Use multiple --pattern flags so we get the exact set the updater needs.
+  # Patterns are fnmatch style; --clobber lets re-runs overwrite stale files.
+  gh release download "$TAG" \
+    --repo "$GITHUB_REPO" \
+    --dir "$STAGE" \
+    --clobber \
+    --pattern '*.dmg' \
+    --pattern '*.dmg.sig' \
+    --pattern '*.tar.gz' \
+    --pattern '*.tar.gz.sig' \
+    --pattern '*.nsis.zip' \
+    --pattern '*.nsis.zip.sig' \
+    --pattern '*.msi' \
+    --pattern '*.msi.zip' \
+    --pattern '*.msi.zip.sig' \
+    --pattern 'latest.json'
+
+  # Collect downloaded files (not latest.json — passed separately so it can be
+  # rewritten URL-wise before upload).
+  local LATEST_JSON="$STAGE/latest.json"
+  local FILES=()
+  while IFS= read -r -d '' f; do
+    [[ "$(basename "$f")" == "latest.json" ]] && continue
+    FILES+=("$f")
+  done < <(find "$STAGE" -maxdepth 1 -type f -print0)
+
+  if [[ ${#FILES[@]} -eq 0 && ! -f "$LATEST_JSON" ]]; then
+    err "Nothing downloaded from ${TAG} — does the release have assets attached?"
+  fi
+
+  info "Mirroring to Aliyun OSS (${#FILES[@]} binaries + latest.json) ..."
+
+  local NODE_ARGS=(--version "$VER")
+  [[ -f "$LATEST_JSON" ]] && NODE_ARGS+=(--latest-json "$LATEST_JSON")
+  NODE_ARGS+=("${FILES[@]}")
+
+  node "$ROOT/scripts/oss-publish.mjs" "${NODE_ARGS[@]}"
+
+  ok "Mirrored ${TAG} to OSS CDN."
 }
 
 # ── Homebrew Cask update helper ─────────────────────────────────────
@@ -293,17 +389,22 @@ FORMULA
 # ═════════════════════════════════════════════════════════════════════
 
 case "${1:-}" in
-  dmg)     cmd_dmg ;;
-  sign)    cmd_sign ;;
-  publish) cmd_publish ;;
-  all)     cmd_dmg; cmd_sign; cmd_publish ;;
+  dmg)        cmd_dmg ;;
+  sign)       cmd_sign ;;
+  publish)    cmd_publish ;;
+  oss-mirror) shift; cmd_oss_mirror "$@" ;;
+  all)        cmd_dmg; cmd_sign; cmd_publish ;;
   *)
-    echo "Usage: $0 {dmg|sign|publish|all}"
+    echo "Usage: $0 {dmg|sign|publish|all|oss-mirror [tag]}"
     echo ""
-    echo "  dmg      Build .app and DMG"
-    echo "  sign     Codesign + notarize (requires Apple Developer creds)"
-    echo "  publish  Upload to GitHub Release + update Homebrew Cask"
-    echo "  all      dmg → sign → publish"
+    echo "  dmg         Build .app and DMG"
+    echo "  sign        Codesign + notarize (requires Apple Developer creds)"
+    echo "  publish     Upload to GitHub Release + update Homebrew Cask"
+    echo "  all         dmg → sign → publish"
+    echo "  oss-mirror  Download published GitHub Release assets and mirror"
+    echo "              them to Aliyun OSS (in-China CDN fallback). Run from"
+    echo "              a machine with OSS credentials. Defaults to the tag"
+    echo "              matching tauri.conf.json's version, or pass an explicit tag."
     echo ""
     echo "Quick start:"
     echo "  export APPLE_ID=you@example.com"

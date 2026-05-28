@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   X, CheckCircle, XCircle, Loader2, Plus, Trash2, Bot,
-  Monitor, Cpu, BarChart2, Info, ScrollText, RefreshCw, Star, ChevronDown, ExternalLink, FileText, AlertTriangle, History, Eye, EyeOff, Zap, ChevronRight,
+  Monitor, Cpu, BarChart2, Info, ScrollText, RefreshCw, Star, ChevronDown, ExternalLink, FileText, AlertTriangle, History, Eye, EyeOff, Zap, ChevronRight, Settings2,
 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useLarkStore, type LarkStatus } from "../../stores/larkStore";
-import { checkClaudeInstalled, checkNodeVersion, checkModelAvailable } from "../../lib/claude-ipc";
+import { checkClaudeInstalled, checkNodeVersion, checkModelAvailable, openProxySettings } from "../../lib/claude-ipc";
 import { startLarkBot, stopLarkBot } from "../../lib/lark-ipc";
 import { useT } from "../../lib/i18n";
 import { getProvider, resolveModelCreds, type ModelConfig } from "../../lib/providers";
+import { isNetworkError, isMacOS, isWindows } from "../../lib/utils";
 import AddModelDialog from "./AddModelDialog";
 import { NodeStatusSection, ClaudeInstallButton } from "./InstallWizard";
 import { TokenStatsContent } from "./TokenStatsDialog";
@@ -644,9 +645,7 @@ function AboutSection({
     getVersion().then(setAppVersion).catch(() => {});
   }, []);
 
-  const isNetworkError = (msg: string): boolean => {
-    return /network|timeout|timed out|econn|enotfound|dns|fetch|unreachable|aborted|connection|socket|host/i.test(msg);
-  };
+  const canOpenProxySettings = isMacOS || isWindows;
 
   const handleCheckUpdate = async () => {
     if (!onCheckUpdate || isChecking) return;
@@ -732,13 +731,24 @@ function AboutSection({
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => shellOpen("https://github.com/braverior/ClaudeBox/releases/latest").catch(() => {})}
-                  className="ml-[18px] inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
-                >
-                  <ExternalLink size={11} />
-                  {t("about.manualDownload")}
-                </button>
+                <div className="ml-[18px] flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {isNetworkError(updateStatus.error) && canOpenProxySettings && (
+                    <button
+                      onClick={() => openProxySettings().catch(() => {})}
+                      className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+                    >
+                      <Settings2 size={11} />
+                      {t("about.openProxySettings")}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => shellOpen("https://github.com/braverior/ClaudeBox/releases/latest").catch(() => {})}
+                    className="inline-flex items-center gap-1 text-[11px] text-accent hover:text-accent-hover transition-colors"
+                  >
+                    <ExternalLink size={11} />
+                    {t("about.manualDownload")}
+                  </button>
+                </div>
                 <details className="text-[10px] text-text-muted ml-[18px]">
                   <summary className="cursor-pointer hover:text-text-secondary select-none">
                     {t("about.updateErrorDetails")}

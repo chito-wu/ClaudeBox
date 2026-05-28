@@ -2061,3 +2061,32 @@ pub fn copy_image_to_clipboard(base64_png: String) -> Result<(), String> {
         .map_err(|e| format!("Clipboard write failed: {e}"))?;
     Ok(())
 }
+
+/// Open the OS network proxy settings panel. Used when an updater error
+/// hints at a network failure so the user can quickly enable a proxy.
+#[tauri::command]
+pub fn open_proxy_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.network")
+            .spawn()
+            .map_err(|e| format!("Failed to open proxy settings: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:network-proxy"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("Failed to open proxy settings: {e}"))?;
+        return Ok(());
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("Opening proxy settings is not supported on this OS".to_string())
+    }
+}

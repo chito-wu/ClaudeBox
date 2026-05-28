@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { stopSession } from "../../lib/claude-ipc";
 import { formatRelativeDate } from "../../lib/utils";
@@ -114,6 +114,23 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
     },
     []
   );
+
+  // Clamp the menu inside the viewport once it has rendered, so that
+  // right-clicking near the bottom/right edge doesn't hide items like "Delete".
+  useLayoutEffect(() => {
+    if (!contextMenu || !menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 8;
+    let nextX = contextMenu.x;
+    let nextY = contextMenu.y;
+    if (rect.right > vw - margin) nextX = Math.max(margin, vw - rect.width - margin);
+    if (rect.bottom > vh - margin) nextY = Math.max(margin, vh - rect.height - margin);
+    if (nextX !== contextMenu.x || nextY !== contextMenu.y) {
+      setContextMenu({ ...contextMenu, x: nextX, y: nextY });
+    }
+  }, [contextMenu]);
 
   const handleDelete = useCallback(
     async (sessionId: string) => {
