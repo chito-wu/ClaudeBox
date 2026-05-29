@@ -453,7 +453,7 @@ export default function Sidebar({
 
   if (collapsed) {
     return (
-      <div className="w-[70px] border-r border-border bg-bg-secondary flex flex-col items-center">
+      <div className="w-[70px] border-r border-border bg-bg-secondary flex flex-col items-center flex-shrink-0">
         {/* macOS traffic light spacing */}
         <div data-tauri-drag-region onMouseDown={startWindowDrag} onDoubleClick={handleTitleBarDoubleClick} className={`${isWindows ? "h-4" : "h-12"} w-full flex-shrink-0`} />
         <button
@@ -520,7 +520,7 @@ export default function Sidebar({
   }
 
   return (
-    <div className="w-64 border-r border-border bg-bg-secondary flex flex-col">
+    <div className="w-64 border-r border-border bg-bg-secondary flex flex-col flex-shrink-0">
       {/* Header — with macOS traffic light inset */}
       <div
         data-tauri-drag-region

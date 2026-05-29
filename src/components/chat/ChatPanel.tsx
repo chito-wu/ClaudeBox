@@ -6,7 +6,7 @@ import { sendMessage, stopSession, onStream, getGitBranch, listGitBranches, chec
 import { larkSendCommand } from "../../lib/lark-ipc";
 import { useLarkStore } from "../../stores/larkStore";
 import { resolveModelCreds } from "../../lib/providers";
-import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, currentMonitor, LogicalSize, PhysicalPosition, PhysicalSize } from "@tauri-apps/api/window";
 import { useT } from "../../lib/i18n";
 import { startWindowDrag, handleTitleBarDoubleClick, isWindows } from "../../lib/utils";
 import WindowControls from "../WindowControls";
@@ -599,17 +599,59 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
   );
 
   const FILE_PANEL_WIDTH = 256; // w-64，CSS 逻辑像素
+  // Must match tauri.conf.json → app.windows[0].minWidth/minHeight. When the
+  // file panel opens we raise the minimum so the user can't shrink the window
+  // back into a state where the panel squashes the chat area.
+  const BASE_MIN_WIDTH = 1000;
+  const BASE_MIN_HEIGHT = 600;
 
+  // 文件树展开/收起是改变窗口尺寸的唯一入口（见 toggleFilePanel）。
+  // 地板宽度由 OS 通过 setMinSize 强制执行：文件树打开时抬到 1256，关闭时
+  // 降回 1000。系统会在拖拽时硬性挡住，因此不需要 resize 监听去"纠正"尺寸。
   const toggleFilePanel = useCallback(async () => {
     const next = !showFilePanel;
     setShowFilePanel(next);
     if (!next) { updateViewerState({ files: [], activeIndex: 0, minimized: false }); }
     try {
       const win = getCurrentWindow();
-      const [size, scale] = await Promise.all([win.outerSize(), win.scaleFactor()]);
+      const [size, scale, position, monitor] = await Promise.all([
+        win.outerSize(),
+        win.scaleFactor(),
+        win.outerPosition(),
+        currentMonitor(),
+      ]);
       // 用 scaleFactor 将逻辑像素转换为物理像素，避免 Retina 屏扩展不足
       const delta = Math.round(FILE_PANEL_WIDTH * scale);
-      await win.setSize(new PhysicalSize(size.width + (next ? delta : -delta), size.height));
+      const openMinW = BASE_MIN_WIDTH + FILE_PANEL_WIDTH; // 文件树打开时的地板宽度
+      if (next) {
+        // 打开：先把 OS 最小宽度抬到地板（1256），系统据此在拖拽时硬性挡住；
+        // 再把窗口撑大 256（macOS 上 setMinSize 不会自动撑大窗口，故仍需 setSize）。
+        // 但地板不超过显示器逻辑宽度——否则在窄屏（如放大字体缩放）上会给系统一个
+        // 无法满足的最小尺寸，可能把窗口推出屏外。窄屏放不下时，chat 的 min-w-0
+        // 会让步、文件树照样完整显示，工具条横向滚动兜底。
+        const monitorLogicalW = monitor ? monitor.size.width / monitor.scaleFactor : Infinity;
+        await win.setMinSize(new LogicalSize(Math.min(openMinW, monitorLogicalW), BASE_MIN_HEIGHT));
+        // Pre-flight: would the wider window run off the right edge of the
+        // current monitor? If so, slide the window left first so the file
+        // panel ends up on-screen instead of off-screen.
+        const newWidth = size.width + delta;
+        if (monitor) {
+          // monitor.position is the screen's top-left in physical pixels;
+          // monitor.size.width is the screen width in physical pixels.
+          const screenRight = monitor.position.x + monitor.size.width;
+          const windowRight = position.x + newWidth;
+          if (windowRight > screenRight) {
+            const newX = Math.max(monitor.position.x, screenRight - newWidth);
+            await win.setPosition(new PhysicalPosition(newX, position.y));
+          }
+        }
+        await win.setSize(new PhysicalSize(newWidth, size.height));
+      } else {
+        // 关闭：必须先把 OS 最小宽度降回 1000，再收缩。若顺序反了，从 1256
+        // 收缩到 1000 会被尚未降低的 minSize(1256) 钳制，导致收不回去。
+        await win.setMinSize(new LogicalSize(BASE_MIN_WIDTH, BASE_MIN_HEIGHT));
+        await win.setSize(new PhysicalSize(size.width - delta, size.height));
+      }
     } catch {
       // dev 环境 window API 不可用时忽略
     }
@@ -1051,7 +1093,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
 
   return (
     <>
-    <div className="flex-1 flex flex-col h-full">
+    <div className="flex-1 flex flex-col h-full min-w-0">
       {/* Session header */}
       <div
         data-tauri-drag-region
@@ -1102,9 +1144,18 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
         <WindowControls />
       </div>
 
-      {/* Main content area with optional file panel */}
-      <div className="flex-1 flex min-h-0">
-        {/* Chat area */}
+      {/* Main content area with optional file panel.
+          @container + relative: the file panel queries THIS row's width and,
+          when there isn't room for chat(744)+panel(256), floats above the chat
+          (absolute) instead of pushing it — so the chat is never compressed.
+          See the panel's @max-[999px]: classes below. */}
+      <div className="flex-1 flex min-h-0 overflow-hidden @container relative">
+        {/* Chat area. min-w-0 so it fills the content row regardless of the
+            file panel: when the row is wide enough (>=1000) the panel sits
+            beside it (inline), otherwise the panel floats above the chat's
+            right edge (see @max-[999px]: on the panel) so the chat is never
+            compressed. The input toolbar scrolls horizontally if it ever
+            outgrows the chat width. */}
         <div className="flex-1 flex flex-col min-w-0">
           {openFiles.length > 0 && !isViewerMinimized ? (
             /* Tabbed file viewer — covers entire chat area for maximum reading space */
@@ -1237,6 +1288,12 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
             </div>
           )}
 
+          {/* Task Board + Input. In float mode (@max-[1000px]) the file panel
+              floats above the chat; lift this region above it (z-30 > panel's
+              z-20) with an opaque bg so the send button / model picker stay
+              clickable and their popovers render in front of the drawer. In
+              inline mode (>=1000) none of these classes apply — layout unchanged. */}
+          <div className="flex-shrink-0 @max-[1000px]:relative @max-[1000px]:z-30 @max-[1000px]:bg-bg-primary">
           {/* Task Board (above input) */}
           <TaskBoard sessionId={currentSessionId} />
 
@@ -1274,11 +1331,12 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
             onPersistDraft={(sid, d) => saveInputDraft(sid, d)}
             injectedDraft={injectedDraft}
           />
+          </div>
         </div>
 
         {/* File panel — tree only, viewer is shown in the chat area */}
         {showFilePanel && currentSession?.projectPath && (
-          <div className="w-64 border-l border-border bg-bg-secondary flex-shrink-0">
+          <div className="w-64 min-w-[16rem] border-l border-border bg-bg-secondary flex-shrink-0 @max-[1000px]:absolute @max-[1000px]:right-0 @max-[1000px]:top-0 @max-[1000px]:bottom-0 @max-[1000px]:z-20 @max-[1000px]:shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]">
             <FileTree rootPath={currentSession.projectPath} changedFiles={changedFiles} refreshKey={fileTreeRefreshKey} onFileSelect={(path) => {
               const existing = openFiles.indexOf(path);
               if (existing >= 0) {
