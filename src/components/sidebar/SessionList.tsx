@@ -31,6 +31,7 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
     sessions,
     currentSessionId,
     streamingSessions,
+    pendingInteractions,
     switchSession,
     removeSession,
     reorderPinned,
@@ -240,6 +241,7 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
     const isActive = session.id === currentSessionId;
     const isRunning = !!streamingSessions[session.id];
     const isUnread = !!session.unread && !isActive;
+    const isWaiting = !!pendingInteractions[session.id];
     const isDragging = pinnedIdx !== null && dragFromPinnedIdx === pinnedIdx;
     const isDropTarget =
       pinnedIdx !== null &&
@@ -299,8 +301,12 @@ export default function SessionList({ searchQuery = "" }: SessionListProps) {
               />
             )}
           </div>
-          <div className="text-xs text-text-muted mt-0.5">
-            <span>{formatRelativeDate(session.updatedAt)}</span>
+          <div className="text-xs mt-0.5">
+            {isWaiting ? (
+              <span className="text-warning font-medium">{t("session.waitingTakeover")}</span>
+            ) : (
+              <span className="text-text-muted">{formatRelativeDate(session.updatedAt)}</span>
+            )}
           </div>
         </div>
       </div>

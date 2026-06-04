@@ -4,7 +4,7 @@ import {
   Monitor, Cpu, BarChart2, Info, ScrollText, RefreshCw, Star, ChevronDown, ExternalLink, FileText, AlertTriangle, History, Eye, EyeOff, Zap, ChevronRight, Settings2,
 } from "lucide-react";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useSettingsStore, THEME_OPTIONS } from "../../stores/settingsStore";
 import { useLarkStore, type LarkStatus } from "../../stores/larkStore";
 import { checkClaudeInstalled, checkNodeVersion, checkModelAvailable, openProxySettings } from "../../lib/claude-ipc";
 import { startLarkBot, stopLarkBot } from "../../lib/lark-ipc";
@@ -158,6 +158,27 @@ function EnvironmentSection({
 
       {/* Auto Start & Notifications */}
       <div className="space-y-3 pt-2 border-t border-border">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-text-primary">{t("settings.appearance")}</span>
+          <div className="flex items-center gap-1">
+            {THEME_OPTIONS.map((opt) => (
+              <button
+                key={opt.id}
+                onClick={() => updateSettings({ theme: opt.id })}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-colors cursor-pointer
+                  ${settings.theme === opt.id
+                    ? "bg-accent/10 text-accent border-accent/40 font-medium"
+                    : "text-text-secondary border-border hover:bg-bg-secondary hover:text-text-primary"}`}
+              >
+                <span
+                  className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ background: opt.swatch, boxShadow: `inset 0 0 0 2px ${opt.accent}` }}
+                />
+                {t(opt.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="flex items-center justify-between">
           <div>
             <span className="text-sm text-text-primary">{t("settings.autoStart")}</span>

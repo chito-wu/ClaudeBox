@@ -112,11 +112,9 @@ export default function App() {
   // Apply theme class to root element
   useEffect(() => {
     const root = document.documentElement;
-    if (settings.theme === "light") {
-      root.classList.add("light");
-    } else {
-      root.classList.remove("light");
-    }
+    root.classList.remove("light", "indigo");
+    if (settings.theme === "light") root.classList.add("light");
+    else if (settings.theme === "indigo") root.classList.add("indigo");
   }, [settings.theme]);
 
   useEffect(() => {

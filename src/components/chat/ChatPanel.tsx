@@ -518,7 +518,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
     messageQueue,
     streamError,
     streamStartTimes,
-    pendingInteraction,
+    pendingInteractions,
     addUserMessage,
     addSystemMessage,
     addLaunchMessage,
@@ -550,6 +550,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
   const resetPullTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentSession = sessions.find((s) => s.id === currentSessionId);
   const isStreaming = currentSessionId ? !!streamingSessions[currentSessionId] : false;
+  const pendingInteraction = currentSessionId ? pendingInteractions[currentSessionId] : undefined;
   const [gitBranch, setGitBranch] = useState<string | null>(null);
 
   // ── Diagnostic: log every render to confirm the latest bundle is loaded ──
@@ -751,13 +752,15 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
   }, [handleStreamData, handleStreamDone, markAllCompleted]);
 
   const doSend = useCallback(
-    async (content: string, attachments?: Attachment[]) => {
-      if (!currentSessionId || !currentSession) return;
+    async (sessionId: string, content: string, attachments?: Attachment[]) => {
+      const session = useChatStore.getState().sessions.find((s) => s.id === sessionId);
+      if (!session) return;
+      const settings = useSettingsStore.getState().settings;
 
       // Validate config before sending. Resolve per-model credentials first,
       // so a model configured via "Add model" (with its own apiKey) works even
       // when the global apiKey field is empty.
-      const effectiveModel = currentSession.model || settings.model;
+      const effectiveModel = session.model || settings.model;
       const resolvedCreds = resolveModelCreds(
         effectiveModel,
         settings.models,
@@ -768,37 +771,37 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
         const missing = ["API Key"];
         if (!effectiveModel) missing.push("Model");
         addSystemMessage(
-          currentSessionId,
+          sessionId,
           `⚠️ ${t("chat.missingConfig", { items: missing.join(", ") })}`
         );
         return;
       }
       if (!effectiveModel) {
         addSystemMessage(
-          currentSessionId,
+          sessionId,
           `⚠️ ${t("chat.noModel")}`
         );
         return;
       }
 
       addUserMessage(
-        currentSessionId,
+        sessionId,
         content,
         attachments?.map((a) => ({ name: a.name, type: a.type, path: a.path, dataUrl: a.dataUrl, size: a.size }))
       );
-      setStreaming(currentSessionId, true);
+      setStreaming(sessionId, true);
       clearError();
       try {
-        const resumeId = currentSession.claudeSessionId || undefined;
+        const resumeId = session.claudeSessionId || undefined;
         const creds = resolvedCreds;
         const pid = await sendMessage({
-          session_id: currentSessionId,
+          session_id: sessionId,
           message: content,
-          cwd: currentSession.projectPath,
-          model: currentSession.model || undefined,
-          permission_mode: currentSession.permissionMode || undefined,
+          cwd: session.projectPath,
+          model: session.model || undefined,
+          permission_mode: session.permissionMode || undefined,
           claude_path: settings.claudePath || undefined,
-          allowed_tools: currentSession.allowedTools ?? [],
+          allowed_tools: session.allowedTools ?? [],
           api_key: creds.apiKey || undefined,
           base_url: creds.baseUrl || undefined,
           attachments: attachments?.map((a) => ({
@@ -814,22 +817,22 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
           sonnet_model: settings.sonnetModel || undefined,
           opus_model: settings.opusModel || undefined,
         });
-        addLaunchMessage(currentSessionId, pid, resumeId);
+        addLaunchMessage(sessionId, pid, resumeId);
         // Sync activity to Lark bot if connected
         if (useLarkStore.getState().status === "connected") {
           larkSendCommand(JSON.stringify({
             type: "app_activity",
-            session_id: currentSessionId,
-            project_path: currentSession.projectPath,
+            session_id: sessionId,
+            project_path: session.projectPath,
             prompt: content.slice(0, 100),
             status: "running",
           })).catch(() => {});
         }
       } catch (err) {
-        handleStreamDone(currentSessionId, String(err));
+        handleStreamDone(sessionId, String(err));
       }
     },
-    [currentSessionId, currentSession, settings, addUserMessage, addSystemMessage, addLaunchMessage, setStreaming, clearError, handleStreamDone]
+    [addUserMessage, addSystemMessage, addLaunchMessage, setStreaming, clearError, handleStreamDone, t]
   );
 
   /** Public send handler from InputArea — enqueues if a task is running, otherwise sends now. */
@@ -849,26 +852,24 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
           }))
         );
       } else {
-        doSend(content, attachments);
+        doSend(currentSessionId, content, attachments);
       }
     },
     [currentSessionId, isStreaming, enqueueMessage, doSend]
   );
 
-  // Auto-pop queue when current task finishes.
-  const prevStreamingRef = useRef(false);
-  const prevSessionRef = useRef<string | null>(null);
+  // Auto-pop queue when ANY session's task finishes — not just the current one —
+  // so queued messages still run after the user switches to another project.
+  const prevStreamingRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
-    const sessionChanged = prevSessionRef.current !== currentSessionId;
-    const wasStreaming = sessionChanged ? false : prevStreamingRef.current;
-    prevSessionRef.current = currentSessionId;
-    prevStreamingRef.current = isStreaming;
-
-    if (!currentSessionId || sessionChanged) return;
-    if (wasStreaming && !isStreaming) {
-      const queue = useChatStore.getState().messageQueue[currentSessionId] || [];
-      if (queue.length === 0) return;
-      const item = popQueuedMessage(currentSessionId);
+    const prev = prevStreamingRef.current;
+    const sids = new Set([...Object.keys(prev), ...Object.keys(streamingSessions)]);
+    for (const sid of sids) {
+      const finished = !!prev[sid] && !streamingSessions[sid];
+      if (!finished) continue;
+      const queue = useChatStore.getState().messageQueue[sid] || [];
+      if (queue.length === 0) continue;
+      const item = popQueuedMessage(sid);
       if (item) {
         const atts = item.attachments?.map((a) => ({
           name: a.name,
@@ -877,10 +878,11 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
           dataUrl: a.dataUrl,
           size: a.size,
         }));
-        doSend(item.content, atts);
+        doSend(sid, item.content, atts);
       }
     }
-  }, [isStreaming, currentSessionId, popQueuedMessage, doSend]);
+    prevStreamingRef.current = { ...streamingSessions };
+  }, [streamingSessions, popQueuedMessage, doSend]);
 
   const handleStop = useCallback(async () => {
     if (currentSessionId) {
@@ -934,7 +936,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
       if (!currentSessionId) return;
       try {
         await sendResponse(currentSessionId, response);
-        clearPendingInteraction();
+        clearPendingInteraction(currentSessionId);
       } catch (err) {
         console.error("Failed to send response:", err);
       }

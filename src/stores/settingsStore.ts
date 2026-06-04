@@ -4,6 +4,15 @@ import { detectProviderByBaseUrl, type ModelConfig } from "../lib/providers";
 
 export type { ModelConfig };
 
+export type ThemeId = "dark" | "light" | "indigo";
+
+/** Shared theme option metadata — reused by Sidebar popover and SettingsDialog. */
+export const THEME_OPTIONS: { id: ThemeId; labelKey: string; swatch: string; accent: string }[] = [
+  { id: "dark", labelKey: "theme.dark", swatch: "#0e0e12", accent: "#f43f5e" },
+  { id: "light", labelKey: "theme.light", swatch: "#ffffff", accent: "#d93651" },
+  { id: "indigo", labelKey: "theme.indigo", swatch: "#1a1a2e", accent: "#e94560" },
+];
+
 export interface Settings {
   model: string;
   models: ModelConfig[];
@@ -16,7 +25,7 @@ export interface Settings {
   permissionMode: string;
   claudePath: string;
   workingDirectory: string;
-  theme: "dark" | "light";
+  theme: ThemeId;
   locale: "en" | "zh";
   apiKey: string;
   baseUrl: string;

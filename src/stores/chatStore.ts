@@ -79,8 +79,8 @@ interface ChatState {
   /** Session id whose git diff dialog is currently open (null = closed). */
   viewDiffSessionId: string | null;
   streamError: string | null;
-  /** Pending interactive tool request (AskUserQuestion / ExitPlanMode) */
-  pendingInteraction: PendingInteraction | null;
+  /** Per-session pending interactive tool request (AskUserQuestion / ExitPlanMode / tool permission) */
+  pendingInteractions: Record<string, PendingInteraction>;
   /** Persisted answered state for interactive tools, keyed by tool_use block ID */
   answeredTools: Record<string, AnsweredToolData>;
   /** Whether the store has finished loading from persistent storage */
@@ -103,8 +103,8 @@ interface ChatState {
   handleStreamDone: (sessionId: string, error?: string, force?: boolean) => void;
   setStreaming: (sessionId: string, streaming: boolean) => void;
   clearError: () => void;
-  /** Clear the pending interaction after it has been responded to */
-  clearPendingInteraction: () => void;
+  /** Clear the pending interaction for a session after it has been responded to */
+  clearPendingInteraction: (sessionId: string) => void;
   /** Mark an interactive tool as answered, persisting data across re-renders */
   setToolAnswered: (toolUseId: string, data: AnsweredToolData) => void;
   /** Reorder sessions inside the pinned section. Indices refer to positions among pinned sessions. */
@@ -345,7 +345,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   inputDrafts: {},
   viewDiffSessionId: null,
   streamError: null,
-  pendingInteraction: null,
+  pendingInteractions: {},
   answeredTools: {},
   loaded: false,
 
@@ -750,9 +750,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         const projectName = get().sessions.find((s) => s.id === sessionId)?.projectName;
         notify("ClaudeBox", `${projectName ?? "Task"} completed`);
+        const restInteractions = { ...get().pendingInteractions };
+        delete restInteractions[sessionId];
         set({
           streamingSessions: { ...get().streamingSessions, [sessionId]: false },
-          pendingInteraction: get().pendingInteraction?.sessionId === sessionId ? null : get().pendingInteraction,
+          pendingInteractions: restInteractions,
         });
         if (get().currentSessionId !== sessionId) {
           get().markUnread(sessionId);
@@ -760,33 +762,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } else if (event.type === "ask_user" && event.requestId) {
         notify("ClaudeBox", "Claude needs your input");
         set({
-          pendingInteraction: {
-            type: "ask_user",
-            requestId: event.requestId,
-            sessionId,
-            questions: event.questions,
+          pendingInteractions: {
+            ...get().pendingInteractions,
+            [sessionId]: {
+              type: "ask_user",
+              requestId: event.requestId,
+              sessionId,
+              questions: event.questions,
+            },
           },
         });
       } else if (event.type === "exit_plan" && event.requestId) {
         notify("ClaudeBox", "Plan ready — approval needed");
         set({
-          pendingInteraction: {
-            type: "exit_plan",
-            requestId: event.requestId,
-            sessionId,
-            input: event.input,
-            planContent: event.planContent,
+          pendingInteractions: {
+            ...get().pendingInteractions,
+            [sessionId]: {
+              type: "exit_plan",
+              requestId: event.requestId,
+              sessionId,
+              input: event.input,
+              planContent: event.planContent,
+            },
           },
         });
       } else if (event.type === "tool_permission" && event.requestId) {
         notify("ClaudeBox", `Tool permission: ${event.toolName}`);
         set({
-          pendingInteraction: {
-            type: "tool_permission",
-            requestId: event.requestId,
-            sessionId,
-            toolName: event.toolName,
-            toolInput: event.input,
+          pendingInteractions: {
+            ...get().pendingInteractions,
+            [sessionId]: {
+              type: "tool_permission",
+              requestId: event.requestId,
+              sessionId,
+              toolName: event.toolName,
+              toolInput: event.input,
+            },
           },
         });
       } else if (event.type === "skills" && event.skills) {
@@ -841,11 +852,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
     saveSessions(sessions);
     // Persist messages to file storage
     saveMessages(sessionId, msgs);
+    const restInteractions = { ...get().pendingInteractions };
+    delete restInteractions[sessionId];
     set({
       sessions,
       messages: { ...get().messages, [sessionId]: msgs },
       streamingSessions: { ...get().streamingSessions, [sessionId]: false },
       streamError: error || null,
+      pendingInteractions: restInteractions,
     });
     if (!error && get().currentSessionId !== sessionId) {
       get().markUnread(sessionId);
@@ -856,7 +870,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     streamingSessions: { ...get().streamingSessions, [sessionId]: streaming },
   }),
   clearError: () => set({ streamError: null }),
-  clearPendingInteraction: () => set({ pendingInteraction: null }),
+  clearPendingInteraction: (sessionId) => {
+    const rest = { ...get().pendingInteractions };
+    delete rest[sessionId];
+    set({ pendingInteractions: rest });
+  },
   setToolAnswered: (toolUseId, data) => {
     const answeredTools = { ...get().answeredTools, [toolUseId]: data };
     set({ answeredTools });

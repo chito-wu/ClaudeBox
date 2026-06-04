@@ -1293,20 +1293,31 @@ pub fn open_in_terminal(path: String) -> Result<(), String> {
     };
     #[cfg(target_os = "macos")]
     {
-        // Prefer iTerm2, fall back to Terminal.app
+        // Prefer iTerm2, fall back to Terminal.app.
+        //
+        // `open -a <app>` always *spawns* fine because the `open` binary itself
+        // always exists; when the app isn't installed it fails later at the
+        // LaunchServices layer with a non-zero exit code. Checking
+        // `spawn().is_ok()` would therefore treat the iTerm attempt as a success
+        // on Macs without iTerm and never fall back to Terminal.app — the
+        // reported "terminal button does nothing" bug. Wait for the command and
+        // check its exit status instead. Terminal.app ships with every macOS, so
+        // the fallback always succeeds.
         let terminals = ["iTerm", "Terminal"];
         let mut launched = false;
         for term in &terminals {
-            let result = Command::new("open")
+            let ok = Command::new("open")
                 .args(["-a", term, &path])
-                .spawn();
-            if result.is_ok() {
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
                 launched = true;
                 break;
             }
         }
         if !launched {
-            return Err("No terminal emulator found".into());
+            return Err("无法打开终端：未找到 iTerm 或系统终端".into());
         }
     }
     #[cfg(target_os = "linux")]

@@ -11,7 +11,12 @@ const en: TranslationDict = {
   "sidebar.collapseSidebar": "Collapse sidebar",
   "sidebar.lightMode": "Switch to light mode",
   "sidebar.darkMode": "Switch to dark mode",
+  "sidebar.theme": "Theme",
   "sidebar.settings": "Settings",
+  "theme.dark": "Dark",
+  "theme.light": "Light",
+  "theme.indigo": "Indigo",
+  "settings.appearance": "Appearance",
 
   // SessionList
   "session.empty": "No sessions yet.",
@@ -19,6 +24,7 @@ const en: TranslationDict = {
   "session.delete": "Delete session",
   "session.noMatch": "No matching sessions",
   "session.unread": "Has new completion",
+  "session.waitingTakeover": "Waiting for manual takeover",
   "session.pin": "Pin to top",
   "session.unpin": "Unpin",
   "session.pinnedTag": "Pinned",
@@ -385,7 +391,12 @@ const zh: TranslationDict = {
   "sidebar.collapseSidebar": "收起侧边栏",
   "sidebar.lightMode": "切换到浅色模式",
   "sidebar.darkMode": "切换到深色模式",
+  "sidebar.theme": "主题",
   "sidebar.settings": "设置",
+  "theme.dark": "黑色",
+  "theme.light": "白色",
+  "theme.indigo": "深蓝",
+  "settings.appearance": "外观",
 
   // SessionList
   "session.empty": "暂无会话",
@@ -393,6 +404,7 @@ const zh: TranslationDict = {
   "session.delete": "删除会话",
   "session.noMatch": "未找到匹配的会话",
   "session.unread": "有新的完成消息",
+  "session.waitingTakeover": "等待人工接管",
   "session.pin": "置顶",
   "session.unpin": "取消置顶",
   "session.pinnedTag": "已置顶",

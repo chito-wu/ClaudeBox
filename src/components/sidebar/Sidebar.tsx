@@ -4,8 +4,8 @@ import {
   Settings2,
   PanelLeftClose,
   PanelLeft,
-  Sun,
-  Moon,
+  Palette,
+  Check,
   Languages,
   Info,
   RefreshCw,
@@ -24,7 +24,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import SessionList from "./SessionList";
 import { useChatStore } from "../../stores/chatStore";
-import { useSettingsStore } from "../../stores/settingsStore";
+import { useSettingsStore, THEME_OPTIONS } from "../../stores/settingsStore";
 import { useLarkStore, type LarkStatus } from "../../stores/larkStore";
 import { startLarkBot, stopLarkBot } from "../../lib/lark-ipc";
 import { resolveModelCreds } from "../../lib/providers";
@@ -54,6 +54,7 @@ export default function Sidebar({
   const [collapsed, setCollapsed] = useState(false);
   const [versionPopover, setVersionPopover] = useState(false);
   const [larkPopover, setLarkPopover] = useState(false);
+  const [themePopover, setThemePopover] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const [larkConnecting, setLarkConnecting] = useState(false);
@@ -62,6 +63,8 @@ export default function Sidebar({
   const buttonRef = useRef<HTMLButtonElement>(null);
   const larkPopoverRef = useRef<HTMLDivElement>(null);
   const larkButtonRef = useRef<HTMLButtonElement>(null);
+  const themePopoverRef = useRef<HTMLDivElement>(null);
+  const themeButtonRef = useRef<HTMLButtonElement>(null);
   const { settings, updateSettings } = useSettingsStore();
   const { createSession } = useChatStore();
   const { config: larkConfig, status: larkStatus, errorMessage: larkError, updateConfig: updateLarkConfig, setStatus: setLarkStatus, setError: setLarkError } = useLarkStore();
@@ -74,7 +77,7 @@ export default function Sidebar({
 
   // Close popover on click outside
   useEffect(() => {
-    if (!versionPopover && !larkPopover) return;
+    if (!versionPopover && !larkPopover && !themePopover) return;
     const handler = (e: MouseEvent) => {
       if (
         versionPopover &&
@@ -94,14 +97,19 @@ export default function Sidebar({
       ) {
         setLarkPopover(false);
       }
+      if (
+        themePopover &&
+        themePopoverRef.current &&
+        !themePopoverRef.current.contains(e.target as Node) &&
+        themeButtonRef.current &&
+        !themeButtonRef.current.contains(e.target as Node)
+      ) {
+        setThemePopover(false);
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [versionPopover, larkPopover]);
-
-  const toggleTheme = () => {
-    updateSettings({ theme: settings.theme === "dark" ? "light" : "dark" });
-  };
+  }, [versionPopover, larkPopover, themePopover]);
 
   const toggleLocale = () => {
     updateSettings({ locale: settings.locale === "en" ? "zh" : "en" });
@@ -451,6 +459,47 @@ export default function Sidebar({
     </div>
   );
 
+  // Theme button (shared between collapsed and expanded)
+  const themeButton = (
+    <button
+      ref={themeButtonRef}
+      onClick={() => { setThemePopover((v) => !v); setVersionPopover(false); setLarkPopover(false); }}
+      className="relative p-2 rounded-lg text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary transition-colors cursor-pointer"
+      title={t("sidebar.theme")}
+    >
+      <Palette size={16} />
+    </button>
+  );
+
+  // Theme popover content
+  const themePopoverContent = themePopover && (
+    <div
+      ref={themePopoverRef}
+      className="absolute bottom-full left-0 mb-2 ml-1 z-50
+                 bg-bg-secondary border border-border rounded-xl
+                 shadow-2xl shadow-black/20 p-1.5 min-w-[160px]
+                 animate-fade-in"
+    >
+      {THEME_OPTIONS.map((opt) => (
+        <button
+          key={opt.id}
+          onClick={() => { updateSettings({ theme: opt.id }); setThemePopover(false); }}
+          className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors cursor-pointer
+            ${settings.theme === opt.id
+              ? "bg-accent/10 text-accent font-medium"
+              : "text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary"}`}
+        >
+          <span
+            className="w-3.5 h-3.5 rounded-full flex-shrink-0"
+            style={{ background: opt.swatch, boxShadow: `inset 0 0 0 2px ${opt.accent}` }}
+          />
+          <span className="flex-1 text-left">{t(opt.labelKey)}</span>
+          {settings.theme === opt.id && <Check size={14} className="flex-shrink-0" />}
+        </button>
+      ))}
+    </div>
+  );
+
   if (collapsed) {
     return (
       <div className="w-[70px] border-r border-border bg-bg-secondary flex flex-col items-center flex-shrink-0">
@@ -488,17 +537,8 @@ export default function Sidebar({
           >
             <Languages size={16} />
           </button>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-lg text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary transition-colors"
-            title={
-              settings.theme === "dark"
-                ? t("sidebar.lightMode")
-                : t("sidebar.darkMode")
-            }
-          >
-            {settings.theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
+          {themePopoverContent}
+          {themeButton}
           <button
             onClick={onOpenTokenStats}
             className="p-2 rounded-lg text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary transition-colors"
@@ -615,17 +655,8 @@ export default function Sidebar({
         >
           <Languages size={16} />
         </button>
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary transition-colors"
-          title={
-            settings.theme === "dark"
-              ? t("sidebar.lightMode")
-              : t("sidebar.darkMode")
-          }
-        >
-          {settings.theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        {themePopoverContent}
+        {themeButton}
         <button
           onClick={onOpenTokenStats}
           className="p-2 rounded-lg text-text-secondary hover:bg-bg-tertiary/50 hover:text-text-primary transition-colors"
