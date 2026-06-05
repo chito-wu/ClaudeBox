@@ -60,29 +60,6 @@
 .light .hljs-params { color: #24292f; }
 .light .hljs-meta { color: #0550ae; }
 
-/* ── Indigo theme (legacy 0.5.11 palette) ──────────────────── */
-.indigo {
-  --color-bg-primary: #1a1a2e;
-  --color-bg-secondary: #16213e;
-  --color-bg-tertiary: #0f3460;
-  --color-bg-chat: #1e1e3a;
-  --color-accent: #e94560;
-  --color-accent-hover: #ff6b6b;
-  --color-text-primary: #eee;
-  --color-text-secondary: #aaa;
-  --color-text-muted: #777;
-  --color-border: #2a2a4a;
-  --color-user-bubble: #3a3a6a;
-  --color-assistant-bg: #222244;
-  --color-tool-bg: #1a1a3a;
-  --color-input-bg: #252545;
-  --color-code-bg: #0d1117;
-  --color-code-header: #161b22;
-  --color-success: #4ade80;
-  --color-warning: #fbbf24;
-  --color-error: #f87171;
-}
-
 :root {
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-synthesis: none;

@@ -25,6 +25,8 @@ export default function NewSessionDialog({ open, onConfirm, onCancel }: NewSessi
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
+      // 输入法拼字阶段不响应 Enter/Escape,避免上屏候选词时误触确认
+      if (e.isComposing) return;
       if (e.key === "Escape") onCancel();
       if (e.key === "Enter") handleConfirm();
     };

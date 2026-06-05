@@ -884,8 +884,36 @@ export default function InputArea({
     }
   }, [input, attachments, disabled, onSend, sessionKey, onPersistDraft]);
 
+  // 输入法拼字状态:macOS WKWebView(WebKit)下 keydown 的 isComposing 不可靠
+  // (compositionend 常先于 keydown 触发,等 keydown 来时 isComposing 已是 false),
+  // 改为自行用 compositionstart/end 维护,并标记“刚上屏”以吞掉紧随其后的那次 Enter。
+  const isComposingRef = useRef(false);
+  const compositionJustEndedRef = useRef(false);
+
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  const handleCompositionEnd = () => {
+    isComposingRef.current = false;
+    compositionJustEndedRef.current = true;
+    // 下一个事件循环清除,不影响之后真正用于发送的 Enter
+    setTimeout(() => {
+      compositionJustEndedRef.current = false;
+    }, 0);
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
+      // 拼字中 / 刚用 Enter 上屏候选词 / IME 仍在处理(keyCode 229)→ 不发送
+      if (
+        e.nativeEvent.isComposing ||
+        isComposingRef.current ||
+        compositionJustEndedRef.current ||
+        e.keyCode === 229
+      ) {
+        return;
+      }
       e.preventDefault();
       handleSend();
     }
@@ -1025,6 +1053,8 @@ export default function InputArea({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
             onPaste={handlePaste}
             placeholder={
               isStreaming

@@ -114,7 +114,6 @@ export default function App() {
     const root = document.documentElement;
     root.classList.remove("light", "indigo");
     if (settings.theme === "light") root.classList.add("light");
-    else if (settings.theme === "indigo") root.classList.add("indigo");
   }, [settings.theme]);
 
   useEffect(() => {

@@ -15,7 +15,6 @@ const en: TranslationDict = {
   "sidebar.settings": "Settings",
   "theme.dark": "Dark",
   "theme.light": "Light",
-  "theme.indigo": "Indigo",
   "settings.appearance": "Appearance",
 
   // SessionList
@@ -395,7 +394,6 @@ const zh: TranslationDict = {
   "sidebar.settings": "设置",
   "theme.dark": "黑色",
   "theme.light": "白色",
-  "theme.indigo": "深蓝",
   "settings.appearance": "外观",
 
   // SessionList

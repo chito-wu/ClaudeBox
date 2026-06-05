@@ -4,13 +4,12 @@ import { detectProviderByBaseUrl, type ModelConfig } from "../lib/providers";
 
 export type { ModelConfig };
 
-export type ThemeId = "dark" | "light" | "indigo";
+export type ThemeId = "dark" | "light";
 
 /** Shared theme option metadata — reused by Sidebar popover and SettingsDialog. */
 export const THEME_OPTIONS: { id: ThemeId; labelKey: string; swatch: string; accent: string }[] = [
   { id: "dark", labelKey: "theme.dark", swatch: "#0e0e12", accent: "#f43f5e" },
   { id: "light", labelKey: "theme.light", swatch: "#ffffff", accent: "#d93651" },
-  { id: "indigo", labelKey: "theme.indigo", swatch: "#1a1a2e", accent: "#e94560" },
 ];
 
 export interface Settings {
@@ -78,6 +77,8 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
 
 function migrateSettings(raw: any): Settings {
   const merged = { ...defaultSettings, ...raw };
+  // 「深蓝(indigo)」主题已移除,旧配置回退到深色
+  if ((merged.theme as string) === "indigo") merged.theme = "dark";
   const models = merged.models;
   if (Array.isArray(models) && models.length > 0 && typeof models[0] === "string") {
     const globalKey = typeof merged.apiKey === "string" ? merged.apiKey : "";

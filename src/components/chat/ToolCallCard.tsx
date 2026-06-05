@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -79,6 +79,15 @@ export default function ToolCallCard({ block, result, pendingInteraction, onResp
   const [customInputs, setCustomInputs] = useState<Record<string, string>>({});
   const [planExpanded, setPlanExpanded] = useState(false);
   const t = useT();
+
+  // 输入法拼字状态:WebKit/WKWebView 下 keydown 的 isComposing 不可靠,自行用 compositionstart/end 维护
+  const isComposingRef = useRef(false);
+  const compositionJustEndedRef = useRef(false);
+  const handleCustomCompositionEnd = () => {
+    isComposingRef.current = false;
+    compositionJustEndedRef.current = true;
+    setTimeout(() => { compositionJustEndedRef.current = false; }, 0);
+  };
   const toolName = block.name || "Tool";
   const icon = TOOL_ICONS[toolName] || <Terminal size={14} />;
   const input = block.input || {};
@@ -324,7 +333,15 @@ export default function ToolCallCard({ block, result, pendingInteraction, onResp
                       }
                     }
                   }}
+                  onCompositionStart={() => { isComposingRef.current = true; }}
+                  onCompositionEnd={handleCustomCompositionEnd}
                   onKeyDown={(e) => {
+                    if (
+                      e.nativeEvent.isComposing ||
+                      isComposingRef.current ||
+                      compositionJustEndedRef.current ||
+                      e.keyCode === 229
+                    ) return;
                     if (e.key === "Enter" && customInputs[q.question]?.trim()) {
                       if (canQuickSubmit) {
                         handleQuickAnswer(q.question, customInputs[q.question].trim());
