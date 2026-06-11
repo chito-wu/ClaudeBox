@@ -225,6 +225,8 @@ const en: TranslationDict = {
   "files.empty": "Empty",
   "files.revealInFinder": "Reveal in Finder",
   "files.openInFinder": "Open in Finder",
+  "files.addToChat": "Add to Chat",
+  "files.folder": "Folder",
 
   // FileViewer
   "viewer.lines": "lines",
@@ -604,6 +606,8 @@ const zh: TranslationDict = {
   "files.empty": "空",
   "files.revealInFinder": "在 Finder 中显示",
   "files.openInFinder": "在 Finder 中打开",
+  "files.addToChat": "添加到对话",
+  "files.folder": "文件夹",
 
   // FileViewer
   "viewer.lines": "行",

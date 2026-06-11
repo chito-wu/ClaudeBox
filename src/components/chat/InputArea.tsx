@@ -4,7 +4,7 @@ import {
   Wrench, Check, Plus, X, FileCode2, FileText,
   Image, FileType, Terminal, Globe, Settings2, Cpu, Eraser,
   Loader2, SquareTerminal, Zap, Search, RefreshCw,
-  Presentation, FileSpreadsheet, ListPlus,
+  Presentation, FileSpreadsheet, ListPlus, Folder,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readImageBase64, saveClipboardImage, getFileSize } from "../../lib/claude-ipc";
@@ -19,7 +19,7 @@ import { formatDuration, formatFileSize } from "../../lib/utils";
 export interface Attachment {
   path: string;
   name: string;
-  type: "text" | "image" | "document";
+  type: "text" | "image" | "document" | "directory";
   /** Base64 data URL for image preview */
   dataUrl?: string;
   /** File size in bytes (for chip display on non-image attachments) */
@@ -36,6 +36,32 @@ function getAttachmentType(filename: string): "text" | "image" | "document" {
   if (IMAGE_EXTENSIONS.has(ext)) return "image";
   if (DOCUMENT_EXTENSIONS.has(ext)) return "document";
   return "text";
+}
+
+/** Build an Attachment from a file path: reads base64 preview for images and file size.
+ *  Directories are referenced by path only (no content read) — Claude explores them
+ *  with its own Glob/LS/Read tools. */
+async function buildAttachment(path: string, isDir = false): Promise<Attachment> {
+  const name = path.split(/[\\/]/).pop() || path;
+  if (isDir) {
+    return { path, name, type: "directory" };
+  }
+  const type = getAttachmentType(name);
+  let dataUrl: string | undefined;
+  if (type === "image") {
+    try {
+      dataUrl = await readImageBase64(path);
+    } catch (e) {
+      console.error("Failed to read image:", e);
+    }
+  }
+  let size: number | undefined;
+  try {
+    size = await getFileSize(path);
+  } catch (e) {
+    console.error("Failed to stat file:", e);
+  }
+  return { path, name, type, dataUrl, size };
 }
 
 /** File category for visual styling */
@@ -137,6 +163,9 @@ interface InputAreaProps {
   /** External signal to overwrite the textarea (e.g. "re-input" from a past user bubble).
    *  Bumping the nonce triggers a load + focus regardless of whether content is identical. */
   injectedDraft?: { content: string; nonce: number } | null;
+  /** External signal to append a file as an attachment (from the file tree right-click menu).
+   *  Bumping the nonce triggers a single add. */
+  injectedAttachment?: { path: string; isDir?: boolean; nonce: number } | null;
 }
 
 const USER_TOOLS = [
@@ -491,12 +520,14 @@ function AttachmentChip({
   onRemove: () => void;
   onOpen: () => void;
 }) {
+  const t = useT();
   const cat = getFileCategory(att.name);
   const ext = att.name.split(".").pop()?.toLowerCase() || "";
   const style = OFFICE_EXT_STYLE[ext] || CATEGORY_STYLE[cat];
   const Icon = getCategoryIcon(cat, ext);
   const extLabel = ext.length > 4 ? ext.slice(0, 4).toUpperCase() : ext.toUpperCase();
   const sizeStr = formatFileSize(att.size);
+  const isDir = att.type === "directory";
 
   if (att.type === "image") {
     return (
@@ -535,9 +566,11 @@ function AttachmentChip({
     >
       <div
         className={`flex-shrink-0 w-10 h-10 rounded-md flex items-center justify-center
-                    ${style.bg} border ${style.border}`}
+                    ${isDir ? "bg-accent/10 border-accent/30" : `${style.bg} border ${style.border}`} border`}
       >
-        {extLabel ? (
+        {isDir ? (
+          <Folder size={18} className="text-accent" />
+        ) : extLabel ? (
           <span
             className={`font-bold tracking-wider uppercase ${style.text}
                         ${extLabel.length >= 4 ? "text-[9px]" : "text-[11px]"}`}
@@ -552,7 +585,9 @@ function AttachmentChip({
         <span className="text-[12px] font-medium text-text-primary truncate max-w-[150px]">
           {att.name}
         </span>
-        {sizeStr && (
+        {isDir ? (
+          <span className="text-[10px] text-text-muted mt-0.5">{t("files.folder")}</span>
+        ) : sizeStr && (
           <span className="text-[10px] text-text-muted mt-0.5">{sizeStr}</span>
         )}
       </div>
@@ -719,9 +754,11 @@ export default function InputArea({
   initialDraft,
   onPersistDraft,
   injectedDraft,
+  injectedAttachment,
 }: InputAreaProps) {
   const [input, setInput] = useState(initialDraft?.content ?? "");
   const [attachments, setAttachments] = useState<Attachment[]>(initialDraft?.attachments ?? []);
+  const [isDragOver, setIsDragOver] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const t = useT();
   const openImage = useImageViewerStore((s) => s.openImage);
@@ -780,26 +817,7 @@ export default function InputArea({
       });
       if (!selected) return;
       const paths = Array.isArray(selected) ? selected : [selected];
-      const newAttachments: Attachment[] = [];
-      for (const p of paths) {
-        const name = p.split(/[\\/]/).pop() || p;
-        const type = getAttachmentType(name);
-        let dataUrl: string | undefined;
-        if (type === "image") {
-          try {
-            dataUrl = await readImageBase64(p);
-          } catch (e) {
-            console.error("Failed to read image:", e);
-          }
-        }
-        let size: number | undefined;
-        try {
-          size = await getFileSize(p);
-        } catch (e) {
-          console.error("Failed to stat file:", e);
-        }
-        newAttachments.push({ path: p, name, type, dataUrl, size });
-      }
+      const newAttachments = await Promise.all(paths.map((p) => buildAttachment(p)));
       setAttachments((prev) => [...prev, ...newAttachments]);
     } catch (e) {
       console.error("File dialog error:", e);
@@ -809,6 +827,15 @@ export default function InputArea({
   const removeAttachment = useCallback((index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }, []);
+
+  /** Append a file or folder (by path) as an attachment, deduping on path. Used by the
+   *  file-tree right-click menu (via injectedAttachment) and drag-and-drop. */
+  const addAttachmentByPath = useCallback(async (path: string, isDir = false) => {
+    if (!path) return;
+    if (attachments.some((a) => a.path === path)) return;
+    const att = await buildAttachment(path, isDir);
+    setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, att]));
+  }, [attachments]);
 
   /** Handle clipboard paste – intercept images, let text pass through */
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
@@ -979,14 +1006,49 @@ export default function InputArea({
     });
   }, [injectedDraft]);
 
+  // External "add attachment" — bumping nonce appends the file once.
+  const lastInjectedAttachmentNonce = useRef<number | null>(null);
+  useEffect(() => {
+    if (!injectedAttachment) return;
+    if (lastInjectedAttachmentNonce.current === injectedAttachment.nonce) return;
+    lastInjectedAttachmentNonce.current = injectedAttachment.nonce;
+    addAttachmentByPath(injectedAttachment.path, injectedAttachment.isDir);
+  }, [injectedAttachment, addAttachmentByPath]);
+
   const hasContent = input.trim();
 
   return (
     <div className="px-4 pt-1 pb-4">
       <div className="max-w-3xl mx-auto">
         {/* Unified input container */}
-        <div className={`input-glow rounded-2xl border overflow-visible
-          ${disabled ? "opacity-50 border-border bg-input-bg" : "border-border bg-input-bg focus-within:border-accent/40"}`}
+        <div
+          className={`input-glow rounded-2xl border overflow-visible
+          ${disabled ? "opacity-50 border-border bg-input-bg" : "border-border bg-input-bg focus-within:border-accent/40"}
+          ${isDragOver ? "border-accent ring-1 ring-accent/40" : ""}`}
+          onDragOver={(e) => {
+            if (disabled) return;
+            if (!e.dataTransfer.types.includes("application/x-claudebox-file")) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "copy";
+            setIsDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            // Only clear when the cursor actually leaves the container, not a child.
+            if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+            setIsDragOver(false);
+          }}
+          onDrop={(e) => {
+            const raw = e.dataTransfer.getData("application/x-claudebox-file");
+            if (!raw) return;
+            e.preventDefault();
+            setIsDragOver(false);
+            try {
+              const { path, isDir } = JSON.parse(raw) as { path: string; isDir?: boolean };
+              addAttachmentByPath(path, isDir);
+            } catch {
+              addAttachmentByPath(raw);
+            }
+          }}
         >
           {/* Pending queue */}
           {queue.length > 0 && (

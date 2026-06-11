@@ -574,10 +574,15 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
   const [contextTokensCache, setContextTokensCache] = useState<Record<string, number>>({});
   const [fileTreeRefreshKey, setFileTreeRefreshKey] = useState(0);
   const [injectedDraft, setInjectedDraft] = useState<{ content: string; nonce: number } | null>(null);
+  const [injectedAttachment, setInjectedAttachment] = useState<{ path: string; isDir?: boolean; nonce: number } | null>(null);
   const toolNameMapRef = useRef<Map<string, string>>(new Map());
 
   const handleResendToInput = useCallback((text: string) => {
     setInjectedDraft({ content: text, nonce: Date.now() });
+  }, []);
+
+  const handleAddFileToChat = useCallback((path: string, isDir: boolean) => {
+    setInjectedAttachment({ path, isDir, nonce: Date.now() });
   }, []);
 
   // Derive current session's viewer state
@@ -1332,6 +1337,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
             }
             onPersistDraft={(sid, d) => saveInputDraft(sid, d)}
             injectedDraft={injectedDraft}
+            injectedAttachment={injectedAttachment}
           />
           </div>
         </div>
@@ -1339,7 +1345,7 @@ export default function ChatPanel({ claudeAvailable }: ChatPanelProps) {
         {/* File panel — tree only, viewer is shown in the chat area */}
         {showFilePanel && currentSession?.projectPath && (
           <div className="w-64 min-w-[16rem] border-l border-border bg-bg-secondary flex-shrink-0 @max-[1000px]:absolute @max-[1000px]:right-0 @max-[1000px]:top-0 @max-[1000px]:bottom-0 @max-[1000px]:z-20 @max-[1000px]:shadow-[-12px_0_24px_-6px_rgba(0,0,0,0.45)]">
-            <FileTree rootPath={currentSession.projectPath} changedFiles={changedFiles} refreshKey={fileTreeRefreshKey} onFileSelect={(path) => {
+            <FileTree rootPath={currentSession.projectPath} changedFiles={changedFiles} refreshKey={fileTreeRefreshKey} onAddToChat={handleAddFileToChat} onFileSelect={(path) => {
               const existing = openFiles.indexOf(path);
               if (existing >= 0) {
                 updateViewerState({ activeIndex: existing, minimized: false });

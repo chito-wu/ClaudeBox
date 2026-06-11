@@ -44,13 +44,13 @@ export interface Session {
 export interface QueuedMessage {
   id: string;
   content: string;
-  attachments?: { name: string; type: "text" | "image" | "document"; path: string; dataUrl?: string; size?: number }[];
+  attachments?: { name: string; type: "text" | "image" | "document" | "directory"; path: string; dataUrl?: string; size?: number }[];
   enqueuedAt: number;
 }
 
 export interface InputDraft {
   content: string;
-  attachments: { name: string; type: "text" | "image" | "document"; path: string; dataUrl?: string; size?: number }[];
+  attachments: { name: string; type: "text" | "image" | "document" | "directory"; path: string; dataUrl?: string; size?: number }[];
 }
 
 export const DEFAULT_TOOLS = ["Read", "Glob", "Grep", "TodoWrite", "Write", "Edit", "Bash", "WebFetch", "WebSearch", "NotebookEdit", "Agent", "MCP"];

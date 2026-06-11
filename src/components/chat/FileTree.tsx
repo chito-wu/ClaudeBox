@@ -13,6 +13,7 @@ import {
   File,
   RefreshCw,
   GitBranch,
+  MessageSquarePlus,
 } from "lucide-react";
 
 // ── File icons ───────────────────────────────────────────────────────
@@ -47,10 +48,11 @@ interface ContextMenuState {
   entry: DirEntry;
 }
 
-function ContextMenu({ menu, onClose, onShowDiff }: {
+function ContextMenu({ menu, onClose, onShowDiff, onAddToChat }: {
   menu: ContextMenuState;
   onClose: () => void;
   onShowDiff: () => void;
+  onAddToChat?: (path: string, isDir: boolean) => void;
 }) {
   const t = useT();
   const ref = useRef<HTMLDivElement>(null);
@@ -78,12 +80,29 @@ function ContextMenu({ menu, onClose, onShowDiff }: {
     onShowDiff();
   }, [onClose, onShowDiff]);
 
+  const handleAddToChat = useCallback(() => {
+    onAddToChat?.(menu.entry.path, menu.entry.is_dir);
+    onClose();
+  }, [onAddToChat, menu.entry.path, menu.entry.is_dir, onClose]);
+
   return (
     <div
       ref={ref}
       className="fixed z-50 min-w-[160px] rounded-lg border border-border bg-bg-secondary shadow-xl py-1 animate-fade-in"
       style={{ left: menu.x, top: menu.y }}
     >
+      {onAddToChat && (
+        <>
+          <button
+            onClick={handleAddToChat}
+            className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-accent/10 hover:text-text-primary transition-colors flex items-center gap-2"
+          >
+            <MessageSquarePlus size={11} />
+            {t("files.addToChat")}
+          </button>
+          <div className="my-1 border-t border-border/50" />
+        </>
+      )}
       <button
         onClick={handleReveal}
         className="w-full text-left px-3 py-1.5 text-xs text-text-secondary hover:bg-accent/10 hover:text-text-primary transition-colors"
@@ -110,12 +129,14 @@ function TreeNode({
   changedFiles,
   onFileSelect,
   onContextMenu,
+  onAddToChat,
 }: {
   entry: DirEntry;
   depth: number;
   changedFiles: Set<string>;
   onFileSelect?: (path: string) => void;
   onContextMenu: (e: React.MouseEvent, entry: DirEntry) => void;
+  onAddToChat?: (path: string, isDir: boolean) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DirEntry[] | null>(null);
@@ -142,6 +163,15 @@ function TreeNode({
       <button
         onClick={toggle}
         onContextMenu={(e) => onContextMenu(e, entry)}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData(
+            "application/x-claudebox-file",
+            JSON.stringify({ path: entry.path, isDir: entry.is_dir }),
+          );
+          e.dataTransfer.setData("text/plain", entry.path);
+          e.dataTransfer.effectAllowed = "copy";
+        }}
         className={`flex items-center gap-1.5 w-full text-left py-1 pr-2 text-xs
                     hover:bg-accent/10 active:bg-accent/15 transition-colors rounded-sm
                     ${entry.is_dir ? "text-text-primary" : "text-text-secondary hover:text-text-primary"}`}
@@ -177,7 +207,7 @@ function TreeNode({
           )}
           {children?.map((child) => (
             <TreeNode key={child.path} entry={child} depth={depth + 1}
-              changedFiles={changedFiles} onFileSelect={onFileSelect} onContextMenu={onContextMenu} />
+              changedFiles={changedFiles} onFileSelect={onFileSelect} onContextMenu={onContextMenu} onAddToChat={onAddToChat} />
           ))}
           {children?.length === 0 && !loading && (
             <div className="py-1 text-xs text-text-muted italic" style={{ paddingLeft: `${(depth + 1) * 14 + 6}px` }}>
@@ -197,9 +227,11 @@ interface FileTreeProps {
   changedFiles?: Set<string>;
   onFileSelect?: (path: string) => void;
   refreshKey?: number;
+  /** Add a file or folder to the chat input as an attachment (right-click menu). */
+  onAddToChat?: (path: string, isDir: boolean) => void;
 }
 
-export default function FileTree({ rootPath, changedFiles = new Set(), onFileSelect, refreshKey }: FileTreeProps) {
+export default function FileTree({ rootPath, changedFiles = new Set(), onFileSelect, refreshKey, onAddToChat }: FileTreeProps) {
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -246,7 +278,7 @@ export default function FileTree({ rootPath, changedFiles = new Set(), onFileSel
         ) : (
           entries.map((entry) => (
             <TreeNode key={entry.path} entry={entry} depth={0}
-              changedFiles={changedFiles} onFileSelect={onFileSelect} onContextMenu={handleContextMenu} />
+              changedFiles={changedFiles} onFileSelect={onFileSelect} onContextMenu={handleContextMenu} onAddToChat={onAddToChat} />
           ))
         )}
       </div>
@@ -255,6 +287,7 @@ export default function FileTree({ rootPath, changedFiles = new Set(), onFileSel
           menu={contextMenu}
           onClose={() => setContextMenu(null)}
           onShowDiff={handleShowDiff}
+          onAddToChat={onAddToChat}
         />
       )}
     </div>
