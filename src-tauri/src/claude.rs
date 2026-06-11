@@ -1596,6 +1596,84 @@ pub fn list_dir(path: String) -> Result<Vec<DirEntry>, String> {
     Ok(entries)
 }
 
+/// Directories never worth walking for an @-mention file search.
+const SEARCH_IGNORE_DIRS: &[&str] = &[
+    "node_modules", "target", "dist", "build", ".next", ".venv",
+    "__pycache__", "vendor", ".cache", ".git",
+];
+
+/// Recursively search files under `root` whose path (relative to root) contains
+/// `query` (case-insensitive). Used by the input box `@` file picker.
+/// Skips hidden entries and heavy build/dep directories. Returns files and
+/// directories with their `is_dir` flag. Bounded to keep the UI responsive.
+#[tauri::command]
+pub fn search_project_files(
+    root: String,
+    query: String,
+    limit: Option<usize>,
+) -> Result<Vec<DirEntry>, String> {
+    let limit = limit.unwrap_or(50);
+    let root_path = std::path::Path::new(&root);
+    if !root_path.is_dir() {
+        return Err(format!("Not a directory: {root}"));
+    }
+    let q = query.to_lowercase();
+
+    // (entry, score): lower score sorts first. 0 = filename match, 1 = path match.
+    let mut hits: Vec<(DirEntry, u8, usize)> = Vec::new();
+    let mut stack: Vec<std::path::PathBuf> = vec![root_path.to_path_buf()];
+    let mut visited = 0usize;
+    const MAX_VISIT: usize = 20_000;
+
+    while let Some(dir) = stack.pop() {
+        if hits.len() >= limit * 4 || visited >= MAX_VISIT {
+            break;
+        }
+        let Ok(read) = std::fs::read_dir(&dir) else { continue };
+        for entry in read.flatten() {
+            visited += 1;
+            if visited >= MAX_VISIT {
+                break;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let is_dir = entry.metadata().map(|m| m.is_dir()).unwrap_or(false);
+            let path = entry.path();
+            if is_dir {
+                if SEARCH_IGNORE_DIRS.contains(&name.as_str()) {
+                    continue;
+                }
+                stack.push(path.clone());
+            }
+            // Match against the path relative to root.
+            let rel = path.strip_prefix(root_path).unwrap_or(&path)
+                .to_string_lossy()
+                .to_string();
+            let rel_lc = rel.to_lowercase();
+            if q.is_empty() || rel_lc.contains(&q) {
+                let score = if q.is_empty() || name.to_lowercase().contains(&q) { 0 } else { 1 };
+                hits.push((
+                    DirEntry { name, path: path.to_string_lossy().to_string(), is_dir },
+                    score,
+                    rel.len(),
+                ));
+            }
+        }
+    }
+
+    // Files before directories within the same score band, then shorter rel path, then alpha.
+    hits.sort_by(|a, b| {
+        a.1.cmp(&b.1)
+            .then(a.0.is_dir.cmp(&b.0.is_dir))
+            .then(a.2.cmp(&b.2))
+            .then(a.0.path.to_lowercase().cmp(&b.0.path.to_lowercase()))
+    });
+    hits.truncate(limit);
+    Ok(hits.into_iter().map(|(e, _, _)| e).collect())
+}
+
 #[tauri::command]
 pub fn write_file(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content.as_bytes()).map_err(|e| e.to_string())

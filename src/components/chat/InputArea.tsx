@@ -7,10 +7,10 @@ import {
   Presentation, FileSpreadsheet, ListPlus, Folder,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { readImageBase64, saveClipboardImage, getFileSize } from "../../lib/claude-ipc";
+import { readImageBase64, saveClipboardImage, getFileSize, searchProjectFiles, type DirEntry } from "../../lib/claude-ipc";
 import { open as shellOpen } from "@tauri-apps/plugin-shell";
 import { useT } from "../../lib/i18n";
-import { parseSkills } from "../../lib/skills";
+import { parseSkills, type SkillDef } from "../../lib/skills";
 import { useSkillsStore } from "../../stores/skillsStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { useImageViewerStore } from "../../stores/imageViewerStore";
@@ -353,6 +353,33 @@ function ModelPanel({
   );
 }
 
+/** Shared command/skill list (Claude built-in commands + skills), merging global
+ *  and project sources. Used by the Skills popover and the inline `/` autocomplete. */
+function useCommandList(projectPath?: string) {
+  const { globalSkills, globalSources, projectSkills, loading, refresh, scanProject } = useSkillsStore();
+
+  useEffect(() => {
+    if (projectPath) scanProject(projectPath);
+  }, [projectPath]);
+
+  const merged = useMemo(() => {
+    const allSkills = [...globalSkills];
+    const sources = { ...globalSources };
+    const pNames = projectPath ? (projectSkills[projectPath] || []) : [];
+    const existingNames = new Set(allSkills.map((s) => s.name));
+    for (const name of pNames) {
+      if (!existingNames.has(name)) allSkills.push({ name, desc: name });
+      sources[name] = "project";
+    }
+    return { skills: allSkills, sources };
+  }, [globalSkills, globalSources, projectSkills, projectPath]);
+
+  const categories = useMemo(() => parseSkills(merged.skills, merged.sources), [merged]);
+  const flat = useMemo(() => categories.flatMap((c) => c.skills), [categories]);
+
+  return { categories, flat, loading, refresh };
+}
+
 function SkillsPopover({
   onSelect,
   projectPath,
@@ -366,11 +393,7 @@ function SkillsPopover({
   const searchRef = useRef<HTMLInputElement>(null);
   const t = useT();
 
-  const { globalSkills, globalSources, projectSkills, loading, refresh, scanProject } = useSkillsStore();
-
-  useEffect(() => {
-    if (open && projectPath) scanProject(projectPath);
-  }, [open, projectPath]);
+  const { categories, loading, refresh } = useCommandList(projectPath);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -386,25 +409,6 @@ function SkillsPopover({
   useEffect(() => {
     if (open) searchRef.current?.focus();
   }, [open]);
-
-  const mergedSkills = useMemo(() => {
-    const allSkills = [...globalSkills];
-    const sources = { ...globalSources };
-    const pNames = projectPath ? (projectSkills[projectPath] || []) : [];
-    const existingNames = new Set(allSkills.map((s) => s.name));
-    for (const name of pNames) {
-      if (!existingNames.has(name)) {
-        allSkills.push({ name, desc: name });
-      }
-      sources[name] = "project";
-    }
-    return { skills: allSkills, sources };
-  }, [globalSkills, globalSources, projectSkills, projectPath]);
-
-  const categories = useMemo(
-    () => parseSkills(mergedSkills.skills, mergedSkills.sources),
-    [mergedSkills],
-  );
 
   const query = search.toLowerCase().trim();
   const filtered = useMemo(() => {
@@ -837,6 +841,101 @@ export default function InputArea({
     setAttachments((prev) => (prev.some((a) => a.path === path) ? prev : [...prev, att]));
   }, [attachments]);
 
+  // ── Inline autocomplete: "/" commands+skills and "@" project files ──────
+  const { flat: commandList } = useCommandList(projectPath);
+  type AcState = { kind: "slash" | "mention"; query: string; tokenStart: number; activeIndex: number };
+  const [ac, setAc] = useState<AcState | null>(null);
+  const [mentionResults, setMentionResults] = useState<DirEntry[]>([]);
+  const acPopupRef = useRef<HTMLDivElement>(null);
+
+  /** Detect a `/` or `@` trigger token in the text before the caret. */
+  const computeTrigger = useCallback((value: string, caret: number): Omit<AcState, "activeIndex"> | null => {
+    const before = value.slice(0, caret);
+    const slash = /^\/(\S*)$/.exec(before); // slash command: only at message start
+    if (slash) return { kind: "slash", query: slash[1], tokenStart: 0 };
+    const at = /(?:^|\s)@(\S*)$/.exec(before); // @mention: after start or whitespace
+    if (at) return { kind: "mention", query: at[1], tokenStart: caret - at[1].length - 1 };
+    return null;
+  }, []);
+
+  /** Update input value + recompute the autocomplete trigger from the caret. */
+  const applyInput = useCallback((value: string, caret: number) => {
+    setInput(value);
+    const trig = computeTrigger(value, caret);
+    setAc(trig ? { ...trig, activeIndex: 0 } : null);
+  }, [computeTrigger]);
+
+  // Slash items: filter the shared command/skill list by query.
+  const slashItems = useMemo(() => {
+    if (ac?.kind !== "slash") return [];
+    const q = ac.query.toLowerCase();
+    const list = q
+      ? commandList.filter((s) => s.name.toLowerCase().includes(q) || s.desc.toLowerCase().includes(q))
+      : commandList;
+    return list.slice(0, 50);
+  }, [ac?.kind, ac?.query, commandList]);
+
+  // Mention items: debounced project file search.
+  useEffect(() => {
+    if (ac?.kind !== "mention" || !projectPath) {
+      setMentionResults([]);
+      return;
+    }
+    const q = ac.query;
+    let cancelled = false;
+    const id = window.setTimeout(async () => {
+      try {
+        const res = await searchProjectFiles(projectPath, q, 50);
+        if (!cancelled) setMentionResults(res);
+      } catch {
+        if (!cancelled) setMentionResults([]);
+      }
+    }, 120);
+    return () => { cancelled = true; window.clearTimeout(id); };
+  }, [ac?.kind, ac?.query, projectPath]);
+
+  const acItems: (SkillDef | DirEntry)[] =
+    ac?.kind === "slash" ? slashItems : ac?.kind === "mention" ? mentionResults : [];
+
+  // Keep activeIndex in range as the result set changes.
+  useEffect(() => {
+    setAc((prev) => (prev && prev.activeIndex >= acItems.length && acItems.length > 0
+      ? { ...prev, activeIndex: 0 } : prev));
+  }, [acItems.length]);
+
+  const closeAc = useCallback(() => { setAc(null); setMentionResults([]); }, []);
+
+  // Close the autocomplete popup on clicks outside it (textarea clicks are fine —
+  // typing/caret moves recompute the trigger anyway).
+  useEffect(() => {
+    if (!ac) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (acPopupRef.current?.contains(target)) return;
+      if (textareaRef.current?.contains(target)) return;
+      closeAc();
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [ac, closeAc]);
+
+  const selectAcItem = useCallback((index: number) => {
+    if (!ac) return;
+    if (ac.kind === "slash") {
+      const item = slashItems[index];
+      if (item) handleSkillSelect(item.name);
+    } else {
+      const entry = mentionResults[index];
+      if (entry) {
+        addAttachmentByPath(entry.path, entry.is_dir);
+        const end = ac.tokenStart + 1 + ac.query.length;
+        setInput((prev) => prev.slice(0, ac.tokenStart) + prev.slice(end));
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+    }
+    closeAc();
+  }, [ac, slashItems, mentionResults, handleSkillSelect, addAttachmentByPath, closeAc]);
+
   /** Handle clipboard paste – intercept images, let text pass through */
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -931,6 +1030,31 @@ export default function InputArea({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Autocomplete popup open → arrows/enter/tab/esc drive the list, not the textarea.
+    if (ac && acItems.length > 0) {
+      const isComposing = e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setAc((p) => (p ? { ...p, activeIndex: (p.activeIndex + 1) % acItems.length } : p));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setAc((p) => (p ? { ...p, activeIndex: (p.activeIndex - 1 + acItems.length) % acItems.length } : p));
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeAc();
+        return;
+      }
+      if ((e.key === "Enter" || e.key === "Tab") && !isComposing) {
+        e.preventDefault();
+        selectAcItem(ac.activeIndex);
+        return;
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       // 拼字中 / 刚用 Enter 上屏候选词 / IME 仍在处理(keyCode 229)→ 不发送
       if (
@@ -1022,7 +1146,7 @@ export default function InputArea({
       <div className="max-w-3xl mx-auto">
         {/* Unified input container */}
         <div
-          className={`input-glow rounded-2xl border overflow-visible
+          className={`input-glow rounded-2xl border overflow-visible relative
           ${disabled ? "opacity-50 border-border bg-input-bg" : "border-border bg-input-bg focus-within:border-accent/40"}
           ${isDragOver ? "border-accent ring-1 ring-accent/40" : ""}`}
           onDragOver={(e) => {
@@ -1050,6 +1174,51 @@ export default function InputArea({
             }
           }}
         >
+          {/* Inline autocomplete popup ("/" commands+skills, "@" project files) */}
+          {ac && acItems.length > 0 && (
+            <div
+              ref={acPopupRef}
+              className="absolute bottom-full left-0 mb-2 w-[min(420px,90%)] max-h-[280px] overflow-y-auto
+                         rounded-lg bg-bg-secondary border border-border shadow-xl z-50 py-1"
+            >
+              <div className="px-3 py-1 text-[10px] font-semibold text-text-muted uppercase tracking-wider">
+                {ac.kind === "slash" ? t("input.acCommands") : t("input.acFiles")}
+              </div>
+              {ac.kind === "slash"
+                ? slashItems.map((s, i) => (
+                    <button
+                      key={s.name}
+                      onMouseEnter={() => setAc((p) => (p ? { ...p, activeIndex: i } : p))}
+                      onMouseDown={(e) => { e.preventDefault(); selectAcItem(i); }}
+                      className={`flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs transition-colors
+                        ${i === ac.activeIndex ? "bg-accent/15 text-text-primary" : "text-text-secondary hover:bg-bg-tertiary/50"}`}
+                    >
+                      <span className="text-accent font-mono flex-shrink-0">/{s.name.split(":").pop()}</span>
+                      <span className="text-text-muted truncate">{s.desc}</span>
+                    </button>
+                  ))
+                : mentionResults.map((entry, i) => {
+                    const rel = projectPath && entry.path.startsWith(projectPath)
+                      ? entry.path.slice(projectPath.length).replace(/^[/\\]/, "")
+                      : entry.path;
+                    return (
+                      <button
+                        key={entry.path}
+                        onMouseEnter={() => setAc((p) => (p ? { ...p, activeIndex: i } : p))}
+                        onMouseDown={(e) => { e.preventDefault(); selectAcItem(i); }}
+                        className={`flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs transition-colors
+                          ${i === ac.activeIndex ? "bg-accent/15 text-text-primary" : "text-text-secondary hover:bg-bg-tertiary/50"}`}
+                      >
+                        {entry.is_dir
+                          ? <Folder size={13} className="text-accent flex-shrink-0" />
+                          : <FileText size={13} className="text-text-muted flex-shrink-0" />}
+                        <span className="truncate flex-1">{rel}</span>
+                      </button>
+                    );
+                  })}
+            </div>
+          )}
+
           {/* Pending queue */}
           {queue.length > 0 && (
             <div className="px-3 pt-2.5 pb-1.5 border-b border-border/40">
@@ -1113,7 +1282,7 @@ export default function InputArea({
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => applyInput(e.target.value, e.target.selectionStart ?? e.target.value.length)}
             onKeyDown={handleKeyDown}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}

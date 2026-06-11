@@ -56,6 +56,7 @@ pub fn run() {
             claude::git_diff,
             claude::git_diff_stat,
             claude::list_dir,
+            claude::search_project_files,
             claude::read_file,
             claude::write_file,
             claude::copy_file,

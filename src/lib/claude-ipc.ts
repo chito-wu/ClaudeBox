@@ -225,6 +225,11 @@ export async function listDir(path: string): Promise<DirEntry[]> {
   return invoke("list_dir", { path });
 }
 
+/** Recursively search project files for the `@` mention picker (skips node_modules/.git/etc). */
+export async function searchProjectFiles(root: string, query: string, limit?: number): Promise<DirEntry[]> {
+  return invoke("search_project_files", { root, query, limit: limit ?? null });
+}
+
 export async function preloadSkills(apiKey?: string, baseUrl?: string): Promise<string> {
   return invoke("preload_skills", { apiKey: apiKey || null, baseUrl: baseUrl || null });
 }
